@@ -1,0 +1,12 @@
+# This is a transient unit file, created programmatically via the systemd API. Do not edit.
+[Unit]
+Description=/home/toby/Jarvis/run_sam.sh
+
+[Service]
+WorkingDirectory=/home/toby/Jarvis
+Restart=on-failure
+ExecStart=
+ExecStart="/home/toby/Jarvis/run_sam.sh"
+
+[Install]
+WantedBy=default.target

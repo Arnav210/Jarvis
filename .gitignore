@@ -1,0 +1,65 @@
+# Privacy-first allowlist: ignore everything unless explicitly included.
+/*
+
+# Repository metadata and documentation
+!/.gitignore
+!/.gitattributes
+!/README.md
+!/docs/
+!/systemd/
+
+# Active Jarvis source and command wrappers
+!/jarvis-ai
+!/jarvis-camera
+!/jarvis-enroll
+!/jarvis-identify
+!/jarvis-listen
+!/jarvis-speak
+!/jarvis_ai.py
+!/jarvis_assistant.py
+!/jarvis_speaker.py
+!/jarvis_wake.py
+!/sam3_process.py
+!/run_sam.sh
+
+# Optional source-only experiments (models and outputs remain ignored)
+!/measure_photo.py
+!/mediapipe_tracker.py
+
+# Object monitor: track code only, never state, logs, caches, or backups
+!/object_monitor/
+/object_monitor/**
+!/object_monitor/object_monitor/
+!/object_monitor/object_monitor/object_monitor.py
+
+# Explicit private/generated exclusions for clarity
+/Footage/
+/Masks/
+/VoiceProfiles/
+/data/
+/models/
+/voices/
+/.venv-*/
+/__pycache__/
+*.pyc
+*.wav
+*.jpg
+*.jpeg
+*.png
+*.npz
+*.npy
+*.onnx
+*.bin
+*.task
+*.jsonl
+*.before_*
+*.before-*
+*.backup-*
+*.bak-*
+*.pyyy
+/jarvis-test
+
+# Third-party source trees are maintained separately.
+/Depth-Anything-3/
+/sam3/
+/whisper.cpp/

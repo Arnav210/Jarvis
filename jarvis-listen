@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+project_dir="${JARVIS_HOME:-$HOME/Jarvis}"
+whisper_cli="$project_dir/whisper.cpp/build/bin/whisper-cli"
+whisper_model="$project_dir/whisper.cpp/models/ggml-base.en.bin"
+router="$project_dir/jarvis_assistant.py"
+speak="$HOME/.local/bin/jarvis-speak"
+speaker_python="$project_dir/.venv-speaker/bin/python"
+speaker_tool="$project_dir/jarvis_speaker.py"
+audio_device="${JARVIS_MIC_DEVICE:-pipewire}"
+listen_seconds="${JARVIS_LISTEN_SECONDS:-5}"
+runtime_dir="${XDG_RUNTIME_DIR:-/tmp}"
+work_dir=$(mktemp -d "$runtime_dir/jarvis-listen.XXXXXX")
+lock_file="$runtime_dir/jarvis-listen.lock"
+
+cleanup() {
+  rm -rf -- "$work_dir"
+}
+trap cleanup EXIT
+
+exec 9>"$lock_file"
+if ! flock -n 9; then
+  "$speak" "I am already listening."
+  exit 1
+fi
+
+if [[ ! -x "$whisper_cli" || ! -f "$whisper_model" ]]; then
+  "$speak" "My speech recognition system is not ready."
+  exit 1
+fi
+
+result=$(( RANDOM % 3 ))
+if [ $result -eq 0 ]; then
+  "$speak" "At your service, sir."
+elif [ $result -eq 1 ]; then
+  "$speak" "What's the agenda at hand, sir?"
+else
+  "$speak" "How may I be of help, sir?"
+fi
+printf 'Listening for %s seconds...\n' "$listen_seconds"
+
+record_status=0
+arecord -q --device "$audio_device" --duration "$listen_seconds" \
+  --format S16_LE --rate 16000 --channels 1 \
+  "$work_dir/command.wav" || record_status=$?
+
+if [[ "$record_status" -ne 0 ]]; then
+  "$speak" "I could not record from the microphone."
+  exit "$record_status"
+fi
+
+printf 'Transcribing locally...\n'
+"$whisper_cli" \
+  --model "$whisper_model" \
+  --file "$work_dir/command.wav" \
+  --language en --no-timestamps --no-prints \
+  --output-txt --output-file "$work_dir/transcript"
+
+transcript=$(tr '\n' ' ' < "$work_dir/transcript.txt" | sed -E 's/^ +| +$//g')
+
+speaker="Unknown"
+speaker_score="0.000"
+speaker_margin="0.000"
+if [[ -x "$speaker_python" && -f "$speaker_tool" ]]; then
+  speaker_result=$("$speaker_python" "$speaker_tool" identify "$work_dir/command.wav" 2>/dev/null || true)
+  if [[ "$speaker_result" == *"|"* ]]; then
+    IFS='|' read -r speaker speaker_score speaker_margin <<< "$speaker_result"
+  fi
+fi
+
+printf 'Speaker: %s (similarity %s, margin %s)\n' \
+  "$speaker" "$speaker_score" "$speaker_margin"
+JARVIS_SPEAKER="$speaker" JARVIS_SPEAKER_SCORE="$speaker_score" \
+  JARVIS_SPEAKER_MARGIN="$speaker_margin" \
+  python3 "$router" "$transcript"

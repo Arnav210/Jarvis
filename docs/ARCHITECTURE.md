@@ -8,6 +8,7 @@ Snapshot: September 25, 2026.
 - `jarvis_wake.py` reads 16 kHz mono audio through PipeWire and detects `hey_jarvis_v0.1.onnx` with openWakeWord.
 - On detection it releases the microphone and starts `~/.local/bin/jarvis-listen`.
 - `jarvis-listen` records five seconds, transcribes with Whisper.cpp, labels the closest enrolled speaker with `jarvis_speaker.py`, and invokes `jarvis_assistant.py`.
+- While that command is active, `jarvis_bargein.py` listens in short local-only windows for strict cancellation phrases and terminates the command process group without a spoken acknowledgment.
 - `jarvis_assistant.py` runs deterministic routes first and calls `jarvis_ai.py` only for unmatched requests.
 - `jarvis_ai.py` calls Ollama at localhost through an explicit function allowlist. It has no arbitrary shell tool.
 - `jarvis-speak` uses Piper, falls back to eSpeak-NG, and plays through PipeWire.

@@ -25,6 +25,12 @@ AI = PROJECT / "jarvis_ai.py"
 MASKS = PROJECT / "Masks"
 SPEAKER = os.environ.get("JARVIS_SPEAKER", "Unknown")
 
+CANCEL_PATTERN = re.compile(
+    r"\b(?:jarvis\s+(?:please\s+)?(?:stop|cancel|be\s+quiet|quiet|shut\s+up)"
+    r"|cancel\s+(?:that|it|this)|never\s+mind|be\s+quiet)\b"
+)
+
+
 JOKES = (
     "Why did the computer get cold? It left its Windows open.",
     "I would tell you a UDP joke, but you might not get it.",
@@ -197,6 +203,8 @@ def route(transcript: str) -> None:
 
     if not text or text in {"blank audio", "silence"}:
         speak("I did not hear a command. Please try again.")
+    elif CANCEL_PATTERN.search(text):
+        print("Cancellation acknowledged.")
     elif re.search(r"\b(who am i|do you recognize me|who is speaking)\b", text):
         if SPEAKER == "Unknown":
             speak("I cannot confidently identify this speaker yet.")
@@ -234,7 +242,7 @@ def route(transcript: str) -> None:
     elif re.search(r"\b(good evening)\b", text):
         speak("Good evening. All systems are standing by.")
     elif re.search(r"\b(what can you do|help|commands)\b", text):
-        speak("I can understand natural requests using my local AI, answer questions, use the camera, describe recent detections, report system status, remember short conversations, and run my approved tools.")
+        speak("I can understand natural requests using my local AI, answer questions, use the camera, describe recent detections, report system status, remember short conversations, run my approved tools, and stop when you interrupt me.")
     elif re.search(r"\b(hello|hi|good morning|good afternoon|good evening)\b", text):
         greeting = f"Hello, {SPEAKER}." if SPEAKER != "Unknown" else "Hello."
         speak(f"{greeting} Jarvis is online and ready.")

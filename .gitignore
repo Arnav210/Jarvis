@@ -19,6 +19,7 @@
 !/jarvis_assistant.py
 !/jarvis_speaker.py
 !/jarvis_wake.py
+!/jarvis_bargein.py
 !/sam3_process.py
 !/run_sam.sh
 

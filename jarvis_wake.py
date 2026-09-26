@@ -17,6 +17,8 @@ from openwakeword.model import Model
 
 PROJECT = Path.home() / "Jarvis"
 LISTEN_COMMAND = Path.home() / ".local" / "bin" / "jarvis-listen"
+BARGE_IN_COMMAND = PROJECT / "jarvis_bargein.py"
+CANCEL_EXIT_STATUS = 10
 MIC_DEVICE = os.environ.get("JARVIS_MIC_DEVICE", "pipewire")
 THRESHOLD = float(os.environ.get("JARVIS_WAKE_THRESHOLD", "0.5"))
 FRAME_SAMPLES = 1280  # 80 ms of 16 kHz, signed 16-bit mono audio
@@ -92,23 +94,83 @@ def load_model() -> Model:
     return Model(wakeword_model_paths=[str(matches[0])])
 
 
+def stop_process(process: subprocess.Popen[object] | None) -> None:
+    if process is None or process.poll() is not None:
+        return
+    process.terminate()
+    try:
+        process.wait(timeout=3)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=3)
+
+
+def stop_process_group(process: subprocess.Popen[object]) -> None:
+    if process.poll() is not None:
+        return
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return
+    try:
+        process.wait(timeout=3)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        process.wait(timeout=3)
+
+
 def run_command_cycle(model: Model, score: float) -> None:
     stop_recorder()
     log(f"Hey Jarvis detected (confidence {score:.2f})")
     environment = os.environ.copy()
     environment["JARVIS_MIC_DEVICE"] = MIC_DEVICE
+    command: subprocess.Popen[object] | None = None
+    barge_in: subprocess.Popen[object] | None = None
     try:
-        result = subprocess.run(
+        command = subprocess.Popen(
             [str(LISTEN_COMMAND)],
             env=environment,
-            timeout=180,
-            check=False,
+            start_new_session=True,
         )
-        log(f"Command cycle finished with status {result.returncode}")
-    except subprocess.TimeoutExpired:
-        log("Command cycle timed out")
+        if BARGE_IN_COMMAND.is_file():
+            barge_in = subprocess.Popen(
+                [sys.executable, str(BARGE_IN_COMMAND)],
+                env=environment,
+            )
+
+        deadline = time.monotonic() + 180
+        while True:
+            returncode = command.poll()
+            if returncode is not None:
+                log(f"Command cycle finished with status {returncode}")
+                break
+
+            if not running:
+                stop_process_group(command)
+                log("Command cycle stopped with wake service")
+                break
+
+            if barge_in is not None and barge_in.poll() is not None:
+                if barge_in.returncode == CANCEL_EXIT_STATUS:
+                    log("Barge-in cancellation detected")
+                    stop_process_group(command)
+                    log("Command cycle cancelled")
+                    break
+                log(f"Barge-in monitor exited with status {barge_in.returncode}")
+                barge_in = None
+
+            if time.monotonic() >= deadline:
+                stop_process_group(command)
+                log("Command cycle timed out")
+                break
+            time.sleep(0.1)
     except OSError as error:
         log(f"Could not launch jarvis-listen: {error}")
+    finally:
+        stop_process(barge_in)
 
     if hasattr(model, "reset"):
         model.reset()

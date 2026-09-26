@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Continuously detect 'Hey Jarvis', then run one Jarvis command cycle."""
+"""Continuously detect 'Hey Jarvis', then run a bounded conversation session."""
 
 from __future__ import annotations
 
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -33,6 +34,12 @@ COMMAND_MIN_SECONDS = float(os.environ.get("JARVIS_COMMAND_MIN_SECONDS", "0.6"))
 COMMAND_START_TIMEOUT = float(os.environ.get("JARVIS_COMMAND_START_TIMEOUT", "2"))
 COMMAND_SILENCE_SECONDS = float(os.environ.get("JARVIS_COMMAND_SILENCE_SECONDS", "0.8"))
 COMMAND_RMS_THRESHOLD = float(os.environ.get("JARVIS_COMMAND_RMS_THRESHOLD", "450"))
+FOLLOW_UP_WAIT_SECONDS = float(os.environ.get("JARVIS_FOLLOW_UP_WAIT_SECONDS", "5"))
+CONVERSATION_MAX_TURNS = max(1, int(os.environ.get("JARVIS_CONVERSATION_MAX_TURNS", "4")))
+END_SESSION_PATTERN = re.compile(
+    r"\b(?:that's all|that is all|goodbye|bye jarvis|end (?:the )?conversation|"
+    r"stop listening|no thanks|nothing else)\b"
+)
 
 running = True
 recorder: subprocess.Popen[bytes] | None = None
@@ -94,7 +101,14 @@ def read_frame(stream: object) -> bytes:
     return bytes(data)
 
 
-def capture_command(stream: object, pre_roll: tuple[bytes, ...]) -> Path:
+def capture_command(
+    stream: object,
+    pre_roll: tuple[bytes, ...],
+    *,
+    start_timeout: float = COMMAND_START_TIMEOUT,
+    require_speech: bool = False,
+    label: str = "one-shot command",
+) -> Path | None:
     runtime_dir = Path(os.environ.get("XDG_RUNTIME_DIR", "/tmp"))
     file_descriptor, audio_name = tempfile.mkstemp(
         prefix="jarvis-command-",
@@ -106,11 +120,14 @@ def capture_command(stream: object, pre_roll: tuple[bytes, ...]) -> Path:
 
     frames = list(pre_roll)
     new_frame_count = 0
+    speech_frame_count = 0
     speech_seen = False
     silent_frame_count = 0
-    max_frames = max(1, int(COMMAND_MAX_SECONDS * 16000 / FRAME_SAMPLES))
+    capture_window = COMMAND_MAX_SECONDS + (start_timeout if require_speech else 0)
+    max_frames = max(1, int(capture_window * 16000 / FRAME_SAMPLES))
+    command_max_frames = max(1, int(COMMAND_MAX_SECONDS * 16000 / FRAME_SAMPLES))
     minimum_frames = max(1, int(COMMAND_MIN_SECONDS * 16000 / FRAME_SAMPLES))
-    start_timeout_frames = max(1, int(COMMAND_START_TIMEOUT * 16000 / FRAME_SAMPLES))
+    start_timeout_frames = max(1, int(start_timeout * 16000 / FRAME_SAMPLES))
     silence_frames_needed = max(1, int(COMMAND_SILENCE_SECONDS * 16000 / FRAME_SAMPLES))
 
     try:
@@ -128,12 +145,22 @@ def capture_command(stream: object, pre_roll: tuple[bytes, ...]) -> Path:
                 silent_frame_count = 0
             elif speech_seen:
                 silent_frame_count += 1
+            if speech_seen:
+                speech_frame_count += 1
+
 
             if new_frame_count >= minimum_frames:
                 if speech_seen and silent_frame_count >= silence_frames_needed:
                     break
+                if speech_seen and speech_frame_count >= command_max_frames:
+                    break
                 if not speech_seen and new_frame_count >= start_timeout_frames:
                     break
+
+        if require_speech and not speech_seen:
+            audio_path.unlink(missing_ok=True)
+            log("No follow-up heard; conversation session ended")
+            return None
 
         with wave.open(str(audio_path), "wb") as audio:
             audio.setnchannels(1)
@@ -145,7 +172,7 @@ def capture_command(stream: object, pre_roll: tuple[bytes, ...]) -> Path:
         raise
 
     duration = len(frames) * FRAME_SAMPLES / 16000
-    log(f"Captured one-shot command ({duration:.2f}s)")
+    log(f"Captured {label} ({duration:.2f}s)")
     return audio_path
 
 
@@ -186,13 +213,53 @@ def stop_process_group(process: subprocess.Popen[object]) -> None:
         process.wait(timeout=3)
 
 
-def run_command_cycle(model: Model, audio_path: Path) -> None:
+def normalize_transcript(text: str) -> str:
+    text = re.sub(r"[^a-z0-9' ]+", " ", text.lower())
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def is_end_session_phrase(text: str) -> bool:
+    return bool(END_SESSION_PATTERN.search(normalize_transcript(text)))
+
+
+def capture_follow_up() -> Path | None:
+    global recorder
+    recorder = start_recorder()
+    if recorder.stdout is None:
+        log("Follow-up microphone stream could not be opened")
+        stop_recorder()
+        return None
+    log(f"Waiting up to {FOLLOW_UP_WAIT_SECONDS:.1f}s for a follow-up")
+    try:
+        return capture_command(
+            recorder.stdout,
+            (),
+            start_timeout=FOLLOW_UP_WAIT_SECONDS,
+            require_speech=True,
+            label="follow-up",
+        )
+    finally:
+        stop_recorder()
+
+
+def run_command_cycle(audio_path: Path) -> tuple[str, str]:
     stop_recorder()
+    runtime_dir = Path(os.environ.get("XDG_RUNTIME_DIR", "/tmp"))
+    descriptor, transcript_name = tempfile.mkstemp(
+        prefix="jarvis-transcript-",
+        suffix=".txt",
+        dir=runtime_dir,
+    )
+    os.close(descriptor)
+    transcript_path = Path(transcript_name)
     environment = os.environ.copy()
     environment["JARVIS_MIC_DEVICE"] = MIC_DEVICE
     environment["JARVIS_AUDIO_FILE"] = str(audio_path)
+    environment["JARVIS_TRANSCRIPT_FILE"] = str(transcript_path)
     command: subprocess.Popen[object] | None = None
     barge_in: subprocess.Popen[object] | None = None
+    outcome = "error"
+    transcript = ""
     try:
         command = subprocess.Popen(
             [str(LISTEN_COMMAND)],
@@ -210,10 +277,12 @@ def run_command_cycle(model: Model, audio_path: Path) -> None:
             returncode = command.poll()
             if returncode is not None:
                 log(f"Command cycle finished with status {returncode}")
+                outcome = "completed" if returncode == 0 else "error"
                 break
 
             if not running:
                 stop_process_group(command)
+                outcome = "stopped"
                 log("Command cycle stopped with wake service")
                 break
 
@@ -221,6 +290,7 @@ def run_command_cycle(model: Model, audio_path: Path) -> None:
                 if barge_in.returncode == CANCEL_EXIT_STATUS:
                     log("Barge-in cancellation detected")
                     stop_process_group(command)
+                    outcome = "cancelled"
                     log("Command cycle cancelled")
                     break
                 log(f"Barge-in monitor exited with status {barge_in.returncode}")
@@ -228,6 +298,7 @@ def run_command_cycle(model: Model, audio_path: Path) -> None:
 
             if time.monotonic() >= deadline:
                 stop_process_group(command)
+                outcome = "timeout"
                 log("Command cycle timed out")
                 break
             time.sleep(0.1)
@@ -236,6 +307,30 @@ def run_command_cycle(model: Model, audio_path: Path) -> None:
     finally:
         stop_process(barge_in)
         audio_path.unlink(missing_ok=True)
+        try:
+            transcript = transcript_path.read_text(encoding="utf-8").strip()
+        except OSError:
+            transcript = ""
+        transcript_path.unlink(missing_ok=True)
+
+    return outcome, transcript
+
+
+def run_conversation(model: Model, first_audio: Path) -> None:
+    audio_path: Path | None = first_audio
+    for turn in range(1, CONVERSATION_MAX_TURNS + 1):
+        outcome, transcript = run_command_cycle(audio_path)
+        if not running or outcome != "completed":
+            break
+        if is_end_session_phrase(transcript):
+            log("Conversation ended by spoken phrase")
+            break
+        if turn >= CONVERSATION_MAX_TURNS:
+            log(f"Conversation reached the {CONVERSATION_MAX_TURNS}-turn limit")
+            break
+        audio_path = capture_follow_up()
+        if audio_path is None:
+            break
 
     if hasattr(model, "reset"):
         model.reset()
@@ -278,7 +373,7 @@ def main() -> int:
                 if not running:
                     audio_path.unlink(missing_ok=True)
                     break
-                run_command_cycle(model, audio_path)
+                run_conversation(model, audio_path)
                 break
 
         stop_recorder()

@@ -29,6 +29,10 @@ CANCEL_PATTERN = re.compile(
     r"\b(?:jarvis\s+(?:please\s+)?(?:stop|cancel|be\s+quiet|quiet|shut\s+up)"
     r"|cancel\s+(?:that|it|this)|never\s+mind|be\s+quiet)\b"
 )
+END_SESSION_PATTERN = re.compile(
+    r"\b(?:that's all|that is all|goodbye|bye jarvis|end (?:the )?conversation|"
+    r"stop listening|no thanks|nothing else)\b"
+)
 
 
 JOKES = (
@@ -205,6 +209,8 @@ def route(transcript: str) -> None:
         speak("I did not hear a command. Please try again.")
     elif CANCEL_PATTERN.search(text):
         print("Cancellation acknowledged.")
+    elif END_SESSION_PATTERN.search(text):
+        speak("Understood. I'll wait for you to call me again.")
     elif re.search(r"\b(who am i|do you recognize me|who is speaking)\b", text):
         if SPEAKER == "Unknown":
             speak("I cannot confidently identify this speaker yet.")

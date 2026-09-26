@@ -11,6 +11,7 @@ speaker_tool="$project_dir/jarvis_speaker.py"
 audio_device="${JARVIS_MIC_DEVICE:-pipewire}"
 listen_seconds="${JARVIS_LISTEN_SECONDS:-5}"
 command_audio="${JARVIS_AUDIO_FILE:-}"
+transcript_output="${JARVIS_TRANSCRIPT_FILE:-}"
 runtime_dir="${XDG_RUNTIME_DIR:-/tmp}"
 work_dir=$(mktemp -d "$runtime_dir/jarvis-listen.XXXXXX")
 lock_file="$runtime_dir/jarvis-listen.lock"
@@ -68,6 +69,10 @@ printf 'Transcribing locally...\n'
   --output-txt --output-file "$work_dir/transcript"
 
 transcript=$(tr '\n' ' ' < "$work_dir/transcript.txt" | sed -E 's/^ +| +$//g')
+
+if [[ -n "$transcript_output" ]]; then
+  printf '%s\n' "$transcript" > "$transcript_output"
+fi
 
 speaker="Unknown"
 speaker_score="0.000"

@@ -6,8 +6,9 @@ Snapshot: September 25, 2026.
 
 - `jarvis-wake.service` runs `.venv-wake/bin/python jarvis_wake.py` continuously.
 - `jarvis_wake.py` reads 16 kHz mono audio through PipeWire and detects `hey_jarvis_v0.1.onnx` with openWakeWord.
-- On detection it releases the microphone and starts `~/.local/bin/jarvis-listen`.
-- `jarvis-listen` records five seconds, transcribes with Whisper.cpp, labels the closest enrolled speaker with `jarvis_speaker.py`, and invokes `jarvis_assistant.py`.
+- On detection it preserves about 1.2 seconds of pre-roll and continues reading the same microphone stream, so words spoken immediately after `Hey Jarvis` are not discarded.
+- Command capture ends after roughly 0.8 seconds of silence or at an eight-second maximum, then the temporary local WAV is passed to `jarvis-listen` without a spoken prompt.
+- `jarvis-listen` transcribes with Whisper.cpp, labels the closest enrolled speaker with `jarvis_speaker.py`, and invokes `jarvis_assistant.py`. Direct manual use retains its normal prompt and five-second recording.
 - While that command is active, `jarvis_bargein.py` listens in short local-only windows for strict cancellation phrases and terminates the command process group without a spoken acknowledgment.
 - `jarvis_assistant.py` runs deterministic routes first and calls `jarvis_ai.py` only for unmatched requests.
 - `jarvis_ai.py` calls Ollama at localhost through an explicit function allowlist. It has no arbitrary shell tool.

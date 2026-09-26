@@ -6,7 +6,7 @@ Local voice and vision assistant running on the Ubuntu Mac mini at `/home/toby/J
 
 Jarvis has two main pipelines:
 
-1. Voice: PipeWire microphone -> openWakeWord -> `jarvis-listen` -> Whisper.cpp and speaker recognition -> deterministic router -> local Ollama fallback -> Piper speech, with local barge-in cancellation during active commands.
+1. Voice: PipeWire microphone -> openWakeWord -> continuous one-shot command capture -> `jarvis-listen` -> Whisper.cpp and speaker recognition -> deterministic router -> local Ollama fallback -> Piper speech, with local barge-in cancellation during active commands.
 2. Vision: `jarvis-camera` -> `Footage/` -> `run_sam.sh` -> SAM3 -> timestamped `Masks/runs/` output -> `Masks/latest` -> object monitor and scene-summary tools.
 
 See `docs/ARCHITECTURE.md` for the tracked component map and `docs/OPERATIONS.md` for safe checks.

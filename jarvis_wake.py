@@ -7,7 +7,10 @@ import os
 import signal
 import subprocess
 import sys
+import tempfile
 import time
+import wave
+from collections import deque
 from pathlib import Path
 
 import numpy as np
@@ -24,6 +27,12 @@ THRESHOLD = float(os.environ.get("JARVIS_WAKE_THRESHOLD", "0.5"))
 FRAME_SAMPLES = 1280  # 80 ms of 16 kHz, signed 16-bit mono audio
 FRAME_BYTES = FRAME_SAMPLES * 2
 COOLDOWN_SECONDS = float(os.environ.get("JARVIS_WAKE_COOLDOWN", "1.5"))
+COMMAND_PRE_ROLL_SECONDS = float(os.environ.get("JARVIS_COMMAND_PRE_ROLL", "1.2"))
+COMMAND_MAX_SECONDS = float(os.environ.get("JARVIS_COMMAND_MAX_SECONDS", "8"))
+COMMAND_MIN_SECONDS = float(os.environ.get("JARVIS_COMMAND_MIN_SECONDS", "0.6"))
+COMMAND_START_TIMEOUT = float(os.environ.get("JARVIS_COMMAND_START_TIMEOUT", "2"))
+COMMAND_SILENCE_SECONDS = float(os.environ.get("JARVIS_COMMAND_SILENCE_SECONDS", "0.8"))
+COMMAND_RMS_THRESHOLD = float(os.environ.get("JARVIS_COMMAND_RMS_THRESHOLD", "450"))
 
 running = True
 recorder: subprocess.Popen[bytes] | None = None
@@ -85,6 +94,61 @@ def read_frame(stream: object) -> bytes:
     return bytes(data)
 
 
+def capture_command(stream: object, pre_roll: tuple[bytes, ...]) -> Path:
+    runtime_dir = Path(os.environ.get("XDG_RUNTIME_DIR", "/tmp"))
+    file_descriptor, audio_name = tempfile.mkstemp(
+        prefix="jarvis-command-",
+        suffix=".wav",
+        dir=runtime_dir,
+    )
+    os.close(file_descriptor)
+    audio_path = Path(audio_name)
+
+    frames = list(pre_roll)
+    new_frame_count = 0
+    speech_seen = False
+    silent_frame_count = 0
+    max_frames = max(1, int(COMMAND_MAX_SECONDS * 16000 / FRAME_SAMPLES))
+    minimum_frames = max(1, int(COMMAND_MIN_SECONDS * 16000 / FRAME_SAMPLES))
+    start_timeout_frames = max(1, int(COMMAND_START_TIMEOUT * 16000 / FRAME_SAMPLES))
+    silence_frames_needed = max(1, int(COMMAND_SILENCE_SECONDS * 16000 / FRAME_SAMPLES))
+
+    try:
+        while running and new_frame_count < max_frames:
+            raw = read_frame(stream)
+            if len(raw) != FRAME_BYTES:
+                break
+            frames.append(raw)
+            new_frame_count += 1
+
+            frame = np.frombuffer(raw, dtype=np.int16)
+            rms = float(np.sqrt(np.mean(frame.astype(np.float64) ** 2)))
+            if rms >= COMMAND_RMS_THRESHOLD:
+                speech_seen = True
+                silent_frame_count = 0
+            elif speech_seen:
+                silent_frame_count += 1
+
+            if new_frame_count >= minimum_frames:
+                if speech_seen and silent_frame_count >= silence_frames_needed:
+                    break
+                if not speech_seen and new_frame_count >= start_timeout_frames:
+                    break
+
+        with wave.open(str(audio_path), "wb") as audio:
+            audio.setnchannels(1)
+            audio.setsampwidth(2)
+            audio.setframerate(16000)
+            audio.writeframes(b"".join(frames))
+    except Exception:
+        audio_path.unlink(missing_ok=True)
+        raise
+
+    duration = len(frames) * FRAME_SAMPLES / 16000
+    log(f"Captured one-shot command ({duration:.2f}s)")
+    return audio_path
+
+
 def load_model() -> Model:
     package_dir = Path(openwakeword.__file__).parent
     matches = list(package_dir.rglob("hey_jarvis_v0.1.onnx"))
@@ -122,11 +186,11 @@ def stop_process_group(process: subprocess.Popen[object]) -> None:
         process.wait(timeout=3)
 
 
-def run_command_cycle(model: Model, score: float) -> None:
+def run_command_cycle(model: Model, audio_path: Path) -> None:
     stop_recorder()
-    log(f"Hey Jarvis detected (confidence {score:.2f})")
     environment = os.environ.copy()
     environment["JARVIS_MIC_DEVICE"] = MIC_DEVICE
+    environment["JARVIS_AUDIO_FILE"] = str(audio_path)
     command: subprocess.Popen[object] | None = None
     barge_in: subprocess.Popen[object] | None = None
     try:
@@ -171,6 +235,7 @@ def run_command_cycle(model: Model, score: float) -> None:
         log(f"Could not launch jarvis-listen: {error}")
     finally:
         stop_process(barge_in)
+        audio_path.unlink(missing_ok=True)
 
     if hasattr(model, "reset"):
         model.reset()
@@ -188,8 +253,10 @@ def main() -> int:
 
     model = load_model()
     log(f"Wake listener ready on {MIC_DEVICE}; threshold={THRESHOLD:.2f}")
+    pre_roll_frame_count = max(1, int(COMMAND_PRE_ROLL_SECONDS * 16000 / FRAME_SAMPLES))
 
     while running:
+        recent_audio: deque[bytes] = deque(maxlen=pre_roll_frame_count)
         recorder = start_recorder()
         if recorder.stdout is None:
             log("Microphone stream could not be opened")
@@ -201,11 +268,17 @@ def main() -> int:
             raw = read_frame(recorder.stdout)
             if len(raw) != FRAME_BYTES:
                 break
+            recent_audio.append(raw)
             frame = np.frombuffer(raw, dtype=np.int16)
             predictions = model.predict(frame)
             score = max((float(value) for value in predictions.values()), default=0.0)
             if score >= THRESHOLD:
-                run_command_cycle(model, score)
+                log(f"Hey Jarvis detected (confidence {score:.2f})")
+                audio_path = capture_command(recorder.stdout, tuple(recent_audio))
+                if not running:
+                    audio_path.unlink(missing_ok=True)
+                    break
+                run_command_cycle(model, audio_path)
                 break
 
         stop_recorder()

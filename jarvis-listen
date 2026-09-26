@@ -10,6 +10,7 @@ speaker_python="$project_dir/.venv-speaker/bin/python"
 speaker_tool="$project_dir/jarvis_speaker.py"
 audio_device="${JARVIS_MIC_DEVICE:-pipewire}"
 listen_seconds="${JARVIS_LISTEN_SECONDS:-5}"
+command_audio="${JARVIS_AUDIO_FILE:-}"
 runtime_dir="${XDG_RUNTIME_DIR:-/tmp}"
 work_dir=$(mktemp -d "$runtime_dir/jarvis-listen.XXXXXX")
 lock_file="$runtime_dir/jarvis-listen.lock"
@@ -30,30 +31,39 @@ if [[ ! -x "$whisper_cli" || ! -f "$whisper_model" ]]; then
   exit 1
 fi
 
-result=$(( RANDOM % 3 ))
-if [ $result -eq 0 ]; then
-  "$speak" "At your service, sir."
-elif [ $result -eq 1 ]; then
-  "$speak" "What's the agenda at hand, sir?"
+if [[ -n "$command_audio" ]]; then
+  if [[ ! -f "$command_audio" ]]; then
+    printf 'Wake-captured audio is missing: %s\n' "$command_audio" >&2
+    exit 66
+  fi
+  printf 'Using wake-captured audio.\n'
 else
-  "$speak" "How may I be of help, sir?"
-fi
-printf 'Listening for %s seconds...\n' "$listen_seconds"
+  command_audio="$work_dir/command.wav"
+  result=$(( RANDOM % 3 ))
+  if [ $result -eq 0 ]; then
+    "$speak" "At your service, sir."
+  elif [ $result -eq 1 ]; then
+    "$speak" "What's the agenda at hand, sir?"
+  else
+    "$speak" "How may I be of help, sir?"
+  fi
+  printf 'Listening for %s seconds...\n' "$listen_seconds"
 
-record_status=0
-arecord -q --device "$audio_device" --duration "$listen_seconds" \
-  --format S16_LE --rate 16000 --channels 1 \
-  "$work_dir/command.wav" || record_status=$?
+  record_status=0
+  arecord -q --device "$audio_device" --duration "$listen_seconds" \
+    --format S16_LE --rate 16000 --channels 1 \
+    "$command_audio" || record_status=$?
 
-if [[ "$record_status" -ne 0 ]]; then
-  "$speak" "I could not record from the microphone."
-  exit "$record_status"
+  if [[ "$record_status" -ne 0 ]]; then
+    "$speak" "I could not record from the microphone."
+    exit "$record_status"
+  fi
 fi
 
 printf 'Transcribing locally...\n'
 "$whisper_cli" \
   --model "$whisper_model" \
-  --file "$work_dir/command.wav" \
+  --file "$command_audio" \
   --language en --no-timestamps --no-prints \
   --output-txt --output-file "$work_dir/transcript"
 
@@ -63,7 +73,7 @@ speaker="Unknown"
 speaker_score="0.000"
 speaker_margin="0.000"
 if [[ -x "$speaker_python" && -f "$speaker_tool" ]]; then
-  speaker_result=$("$speaker_python" "$speaker_tool" identify "$work_dir/command.wav" 2>/dev/null || true)
+  speaker_result=$("$speaker_python" "$speaker_tool" identify "$command_audio" 2>/dev/null || true)
   if [[ "$speaker_result" == *"|"* ]]; then
     IFS='|' read -r speaker speaker_score speaker_margin <<< "$speaker_result"
   fi

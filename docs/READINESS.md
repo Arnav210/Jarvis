@@ -4,7 +4,7 @@ Completed 2026-10-20 on the live Ubuntu Jarvis installation.
 
 ## Result
 
-The source is prepared for a private GitHub repository. The local baseline includes the
+The source is prepared for the public GitHub repository `Arnav210/Jarvis`. The local baseline includes the
 previously uncommitted working source and launcher moves, source allowlists, setup and
 architecture documentation, environment snapshots, model inventory, service templates,
 existing regression checks, a synthetic music fixture, source/history audit tooling,
@@ -59,14 +59,12 @@ camera capture, and SAM3/depth inference were not run. Environment files are obs
 snapshots, not a claim of portable hardware setup. The GitHub Actions job is configured
 and its commands passed locally; a hosted Actions run requires the future GitHub push.
 
-## Publication step
+## Publication status
 
-No GitHub repository, remote, or push was created during preparation. Create a private
-repository and push the reviewed local baseline when ready. Public licensing for
-first-party code has not been selected; third-party notices are preserved separately.
-The installed legacy SAM3 service path is documented; deploying the corrected template
-is a separate runtime change, not required to store source on GitHub.
-
+The public repository is https://github.com/Arnav210/Jarvis. The reviewed source and
+existing local history will be joined with its initial README commit without a force push.
+First-party open-source licensing has not been selected; third-party notices are preserved.
+No private runtime data or media is included. Publication does not deploy service templates.
 
 ## Source organization update — 2026-10-21
 
@@ -78,3 +76,12 @@ The wake listener and SAM3 watcher returned to active state after migration. Thi
 does not establish physical wake detection, room audibility, or model inference.
 The depth system service uses a compatibility entry point until an administrator
 changes its root-owned unit. Third-party checkouts and model environments stay put.
+
+## Public-release review — 2026-10-21
+
+The current organized source and reachable Git history passed the source/privacy audit.
+All 72 unit tests and the three existing console/music integration suites passed.
+The tests used isolated state, synthetic audio, and silent MPV output. No live service
+was restarted and no hardware capture or playback test was performed for publication.
+SAM3 patch attribution and the original third-party license are retained. Local media,
+recordings, birthday settings, briefing contents, model files, and credentials remain excluded.

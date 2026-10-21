@@ -26,8 +26,9 @@ Review content as well: a pattern scan cannot prove the absence of every possibl
 Use explicit paths for staging and inspect the full staged diff. Moving a launcher is a
 deletion of the old path plus an addition under `bin/`; review both together.
 Run the source audit and isolated regression checks before a baseline commit.
-No GitHub remote is required for local preparation. The first repository should be private;
-first-party public licensing has not been selected. Do not grant third-party rights implicitly.
+No GitHub remote is required for local preparation. The publication target is the public repository `Arnav210/Jarvis`.
+First-party open-source licensing has not been selected; visibility does not grant an
+additional reuse license. Third-party licenses remain separate.
 
 ## Service reconciliation
 

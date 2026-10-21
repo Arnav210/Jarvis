@@ -29,7 +29,7 @@ Folder context expires after ten minutes. Music, playback ducking, and one comma
 
 ## Files and commands on Ubuntu
 
-Source: `/home/toby/Jarvis/jarvis_computer.py`; integration: `/home/toby/Jarvis/jarvis_ai.py`.
+Source: `src/jarvis/computer/jarvis_computer.py`; integration: `src/jarvis/assistant/jarvis_ai.py`.
 
 Silent typed use:
 

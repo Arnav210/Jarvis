@@ -3,11 +3,11 @@
 These checks are silent and read-only.
 
 ```bash
-cd /home/toby/Jarvis
+cd "$HOME/Jarvis"
 systemctl --user is-active jarvis-wake.service
 systemctl --user is-active jarvis-sam3.service
 systemctl --user status jarvis-stream.service --no-pager
-pgrep -af '/home/toby/Jarvis'
+pgrep -af "$HOME/Jarvis"
 readlink -f Masks/latest
 python3 -m json.tool Masks/latest/manifest.json | head -80
 journalctl --user -u jarvis-wake.service -n 50 --no-pager

@@ -61,6 +61,7 @@ before committing. After a deployed code change, restart only the affected servi
 verify its behavior. Repository templates are not automatically installed.
 Use `git revert` for a committed rollback; keep private recovery backups separately.
 
-No open-source license is selected for first-party code. Start with a private GitHub repository;
-choose a license deliberately before offering the project for public reuse. Third-party
+No open-source license is selected for first-party code. This public repository shares the Jarvis3000 source for inspection.
+No additional reuse license is granted for first-party code; choose a license deliberately
+before offering it for public reuse. Third-party
 code and model licenses remain separate. Git identity is repository-local.

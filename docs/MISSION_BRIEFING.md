@@ -18,7 +18,7 @@ TASKS:
 - Demonstrate three working gestures
 
 ASSIGNMENTS:
-- Xavier: test and record results
+- Team member: test and record results
 
 SUCCESS: Each gesture works five times in a row.
 ```

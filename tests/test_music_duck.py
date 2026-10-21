@@ -5,6 +5,8 @@ import subprocess
 import sys
 import tempfile
 import time
+from types import ModuleType
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 
@@ -128,8 +130,17 @@ with tempfile.TemporaryDirectory(prefix='jarvis-duck-test-') as directory:
         assert not duck.STATE.exists()
         print('PASS disappearing player cleans up without starting playback')
 
-        # Exercise the actual wake-loop placement without reading the microphone.
-        from jarvis.audio import jarvis_wake as wake
+        # Exercise wake-loop placement without model packages or microphone access.
+        # The real model loader is replaced below; fail if this test invokes it.
+        def unexpected_model(*args, **kwargs):
+            raise AssertionError('The isolated wake-loop test must not load a model')
+        wake_package = ModuleType('openwakeword')
+        wake_package.__path__ = []
+        wake_model = ModuleType('openwakeword.model')
+        wake_model.Model = unexpected_model
+        with patch.dict(sys.modules, {'openwakeword': wake_package,
+                                     'openwakeword.model': wake_model}):
+            from jarvis.audio import jarvis_wake as wake
         player = start()
         volume(67)
         class Model:

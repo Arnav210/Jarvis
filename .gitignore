@@ -1,0 +1,155 @@
+# Privacy-first allowlist: ignore everything unless explicitly included.
+/*
+
+# Repository metadata and documentation
+!/.gitignore
+!/.gitattributes
+!/README.md
+!/docs/
+!/systemd/
+
+# Active Jarvis source and command wrappers
+
+# Optional source-only experiments (models and outputs remain ignored)
+
+# Object monitor: track code only, never state, logs, caches, or backups
+!/object_monitor/
+/object_monitor/**
+!/object_monitor/object_monitor/
+
+# Explicit private/generated exclusions for clarity
+/Footage/
+/Masks/
+/VoiceProfiles/
+/data/
+/models/
+/voices/
+/.venv-*/
+/__pycache__/
+*.pyc
+*.wav
+*.jpg
+*.jpeg
+*.png
+*.npz
+*.npy
+*.onnx
+*.bin
+*.task
+*.jsonl
+*.before_*
+*.before-*
+*.backup-*
+*.bak-*
+*.pyyy
+/jarvis-test
+
+# Third-party source trees are maintained separately.
+/Depth-Anything-3/
+/sam3/
+/whisper.cpp/
+
+# Captain log source; recorded entries remain private under data.
+
+# Shared local camera capture source.
+
+# Command launchers live in bin; include only these source files.
+!/bin/
+/bin/*
+!/bin/jarvis-ai
+!/bin/jarvis-camera
+!/bin/jarvis-enroll
+!/bin/jarvis-identify
+!/bin/jarvis-listen
+!/bin/jarvis-speak
+!/bin/run_sam.sh
+!/bin/jarvis-log
+
+# Live command console source and launcher
+!/bin/jarvis-status
+
+# Local music controller; downloaded media remains private under data.
+!/bin/jarvis-music
+
+# GitHub preparation: current first-party source and existing tests.
+!/bin/jarvis-computer
+!/bin/jarvis-preview
+!/bin/jarvis-reset
+!/bin/jarvis-vitals
+
+# Include source tests; keep their generated cache and fixtures private.
+!/tests/
+/tests/**
+!/tests/*.py
+
+# Private configuration and generated files, including inside allowed folders.
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+*.log
+__pycache__/
+*.pyc
+*.save
+*.bak
+*.backup
+*.before-*
+*.before_*
+*.backup-*
+*.bak-*
+
+# Repository tooling and setup assets (source only).
+!/tools/
+/tools/**
+!/tools/*.py
+!/requirements/
+/requirements/**
+!/requirements/*.txt
+!/requirements/observed-environments.json
+!/.github/
+/.github/**
+!/.github/workflows/
+!/.github/workflows/checks.yml
+!/config/
+/config/**
+!/config/jarvis.env.example
+!/patches/
+/patches/**
+!/patches/sam3-local-cpu.patch
+!/patches/SAM3-LICENSE
+!/patches/README.md
+
+# Native dependencies installed through Conda, separately from Python metadata.
+!/requirements/observed-conda.json
+
+# First-party package: Python source only, never runtime data.
+!/src/
+/src/**
+!/src/jarvis/
+!/src/jarvis/assistant/
+!/src/jarvis/assistant/*.py
+!/src/jarvis/audio/
+!/src/jarvis/audio/*.py
+!/src/jarvis/vision/
+!/src/jarvis/vision/*.py
+!/src/jarvis/computer/
+!/src/jarvis/computer/*.py
+!/src/jarvis/music/
+!/src/jarvis/music/*.py
+!/src/jarvis/ui/
+!/src/jarvis/ui/*.py
+!/src/jarvis/recording/
+!/src/jarvis/recording/*.py
+!/src/jarvis/__init__.py
+!/pyproject.toml
+!/depth_service.py
+/archive/
+
+# Local mission briefing source assets; actual briefings remain private in data/.
+!/bin/jarvis-briefing
+!/config/mission-briefing.txt.example
+
+# Standalone ASCII film command.
+!/bin/jarvis-ironman

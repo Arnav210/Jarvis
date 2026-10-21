@@ -1,0 +1,74 @@
+{
+  "observed_date": "2026-10-20",
+  "note": "Model files are excluded from Git. URLs identify providers; checksums identify the inspected local artifacts.",
+  "files": [
+    {
+      "path": "models/nemo_en_titanet_small.onnx",
+      "present": true,
+      "bytes": 40257283,
+      "sha256": "ad4a1802485d8b34c722d2a9d04249662f2ece5d28a7a039063ca22f515a789e",
+      "source": "https://github.com/k2-fsa/sherpa-onnx",
+      "note": "Speaker recognition; obtain the matching TitaNet model separately."
+    },
+    {
+      "path": "voices/en_GB-alan-medium/en_GB-alan-medium.onnx",
+      "present": true,
+      "bytes": 63201294,
+      "sha256": "0a309668932205e762801f1efc2736cd4b0120329622adf62be09e56339d3330",
+      "source": "https://huggingface.co/rhasspy/piper-voices/tree/main/en/en_GB/alan/medium",
+      "note": "Piper voice weights; consult the voice model card."
+    },
+    {
+      "path": "voices/en_GB-alan-medium/en_GB-alan-medium.onnx.json",
+      "present": true,
+      "bytes": 4888,
+      "sha256": "c0f0d124e5895c00e7c03b35dcc8287f319a6998a365b182deb5c8e752ee8c1e",
+      "source": "https://huggingface.co/rhasspy/piper-voices/tree/main/en/en_GB/alan/medium",
+      "note": "Piper voice configuration."
+    },
+    {
+      "path": "whisper.cpp/models/ggml-tiny.en.bin",
+      "present": true,
+      "bytes": 77704715,
+      "sha256": "921e4cf8686fdd993dcd081a5da5b6c365bfde1162e72b08d75ac75289920b1f",
+      "source": "https://github.com/ggml-org/whisper.cpp",
+      "note": "Default transcription model."
+    },
+    {
+      "path": "whisper.cpp/models/ggml-silero-v6.2.0.bin",
+      "present": true,
+      "bytes": 885098,
+      "sha256": "2aa269b785eeb53a82983a20501ddf7c1d9c48e33ab63a41391ac6c9f7fb6987",
+      "source": "https://github.com/ggml-org/whisper.cpp",
+      "note": "Voice activity detection model."
+    },
+    {
+      "path": "hand_landmarker.task",
+      "present": true,
+      "bytes": 7819105,
+      "sha256": "fbc2a30080c3c557093b5ddfc334698132eb341044ccee322ccf8bcf3607cde1",
+      "source": "https://ai.google.dev/edge/mediapipe/solutions/vision/hand_landmarker",
+      "note": "Optional gesture tracking model."
+    }
+  ],
+  "external_models": [
+    {
+      "component": "SAM3",
+      "provider_repository": "facebook/sam3",
+      "checkpoint": "sam3.pt",
+      "source": "https://huggingface.co/facebook/sam3",
+      "note": "Downloaded through upstream hf_hub_download; account access and model terms are separate."
+    },
+    {
+      "component": "Depth Anything 3",
+      "provider_repository": "depth-anything/DA3-SMALL",
+      "source": "https://huggingface.co/depth-anything/DA3-SMALL"
+    },
+    {
+      "component": "wake",
+      "provider": "openWakeWord package resources",
+      "model": "hey_jarvis_v0.1.onnx",
+      "source": "https://github.com/dscripka/openWakeWord"
+    }
+  ]
+}

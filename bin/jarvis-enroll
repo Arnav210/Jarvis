@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+project_dir="${JARVIS_HOME:-$HOME/Jarvis}"
+speak="$HOME/.local/bin/jarvis-speak"
+speaker_python="$project_dir/.venv-speaker/bin/python"
+speaker_tool="$project_dir/src/jarvis/audio/jarvis_speaker.py"
+audio_device="${JARVIS_MIC_DEVICE:-pipewire}"
+
+if [[ $# -ne 1 ]]; then
+  printf 'Usage: jarvis-enroll {Arnav|Shriya|Soni|Xavier}\n' >&2
+  exit 2
+fi
+
+case "${1,,}" in
+  arnav) name="Arnav" ;;
+  shriya) name="Shriya" ;;
+  soni) name="Soni" ;;
+  xavier) name="Xavier" ;;
+  *) printf 'Name must be Arnav, Shriya, Soni, or Xavier.\n' >&2; exit 2 ;;
+esac
+
+sample_dir="$project_dir/VoiceProfiles/samples/${name,,}"
+mkdir -p "$sample_dir"
+
+wake_was_active=false
+if systemctl --user is-active --quiet jarvis-wake.service; then
+  wake_was_active=true
+  systemctl --user stop jarvis-wake.service
+fi
+
+cleanup() {
+  if [[ "$wake_was_active" == true ]]; then
+    systemctl --user start jarvis-wake.service
+  fi
+}
+trap cleanup EXIT
+
+printf 'Enrolling %s. Five samples will be recorded.\n' "$name"
+printf 'Use a normal voice and stand where you usually speak to Jarvis.\n'
+
+for sample in 1 2 3 4 5; do
+  printf '\nSample %s of 5: press Enter, then speak naturally for six seconds.\n' "$sample"
+  read -r
+  arecord -q --device "$audio_device" --duration 6 \
+    --format S16_LE --rate 16000 --channels 1 \
+    "$sample_dir/sample-${sample}.wav"
+  printf 'Saved sample %s.\n' "$sample"
+done
+
+"$speaker_python" "$speaker_tool" build "$name"
+"$speak" "$name voice profile enrolled."
+printf '%s is now enrolled.\n' "$name"

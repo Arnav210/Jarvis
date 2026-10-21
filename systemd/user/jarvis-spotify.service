@@ -1,0 +1,14 @@
+[Unit]
+Description=Jarvis Spotify Connect receiver
+Wants=network-online.target pipewire-pulse.service
+After=network-online.target pipewire-pulse.service
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/go-librespot --config_dir %h/.config/go-librespot
+Restart=on-failure
+RestartSec=5
+Environment=PULSE_SERVER=unix:%t/pulse/native
+
+[Install]
+WantedBy=default.target

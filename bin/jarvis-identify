@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+project_dir="${JARVIS_HOME:-$HOME/Jarvis}"
+exec "$project_dir/.venv-speaker/bin/python" \
+  "$project_dir/src/jarvis/audio/jarvis_speaker.py" identify "$@"

@@ -1,0 +1,8 @@
+* text=auto eol=lf
+*.sh text eol=lf
+jarvis-* text eol=lf
+*.py text eol=lf
+*.service text eol=lf
+
+# Patch context lines intentionally contain leading/trailing spaces.
+*.patch -whitespace

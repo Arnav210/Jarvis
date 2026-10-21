@@ -1,0 +1,12 @@
+[Unit]
+Description=Jarvis SAM3 image watcher
+
+[Service]
+Type=simple
+WorkingDirectory=%h/Jarvis
+ExecStart=%h/Jarvis/bin/run_sam.sh
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

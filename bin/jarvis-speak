@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ $# -eq 0 ]]; then
+    echo "Usage: jarvis-speak <message>" >&2
+    exit 64
+fi
+
+message="$*"
+script_path=$(readlink -f -- "${BASH_SOURCE[0]}")
+script_dir="${JARVIS_HOME:-$(dirname -- "$(dirname -- "$script_path")")}"
+piper_bin="${JARVIS_PIPER_BIN:-$script_dir/.venv-tts/bin/piper}"
+piper_model="${JARVIS_PIPER_MODEL:-$script_dir/voices/en_GB-alan-medium/en_GB-alan-medium.onnx}"
+length_scale="${JARVIS_LENGTH_SCALE:-1.05}"
+sentence_silence="${JARVIS_SENTENCE_SILENCE:-0.2}"
+piper_volume="${JARVIS_PIPER_VOLUME:-1.0}"
+lead_in_ms="${JARVIS_LEAD_IN_MS:-600}"
+engine="${JARVIS_ENGINE:-piper}"
+playback_latency="${JARVIS_PLAYBACK_LATENCY:-200ms}"
+runtime_dir="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+lock_file="$runtime_dir/jarvis-speak.lock"
+
+exec 9>"$lock_file"
+flock 9
+
+audio_file=$(mktemp --tmpdir="$runtime_dir" jarvis-speak.XXXXXX.wav)
+playback_file=$(mktemp --tmpdir="$runtime_dir" jarvis-playback.XXXXXX.wav)
+trap 'rm -f "$audio_file" "$playback_file"' EXIT
+
+play_with_lead_in() {
+    if ffmpeg -hide_banner -loglevel error -y -i "$audio_file" \
+        -af "adelay=${lead_in_ms}:all=1" -ar 48000 -ac 2 -c:a pcm_s16le "$playback_file"; then
+        pw-play --latency "$playback_latency" "$playback_file"
+    else
+        pw-play --latency "$playback_latency" "$audio_file"
+    fi
+}
+
+if [[ "$engine" != "espeak" && -x "$piper_bin" && -f "$piper_model" ]]; then
+    if printf "%s\n" "$message" | "$piper_bin" --model "$piper_model" --output-file "$audio_file" --length-scale "$length_scale" --sentence-silence "$sentence_silence" --volume "$piper_volume" >/dev/null 2>&1; then
+        play_with_lead_in
+        exit 0
+    fi
+fi
+
+voice="${JARVIS_ESPEAK_VOICE:-en-us+m3}"
+speed="${JARVIS_ESPEAK_SPEED:-145}"
+pitch="${JARVIS_ESPEAK_PITCH:-35}"
+amplitude="${JARVIS_ESPEAK_AMPLITUDE:-100}"
+printf "%s" "$message" | espeak-ng --stdin -v "$voice" -s "$speed" -p "$pitch" -a "$amplitude" -w "$audio_file"
+play_with_lead_in

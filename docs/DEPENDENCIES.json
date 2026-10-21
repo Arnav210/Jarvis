@@ -1,0 +1,61 @@
+{
+  "observed_date": "2026-10-20",
+  "purpose": "Observed local checkouts, not an install lockfile",
+  "checkouts": [
+    {
+      "directory": "Depth-Anything-3",
+      "independent_git_checkout": true,
+      "commit": "3d835ec1a5802d64a8b8b15f817a1ab54809bfe4",
+      "has_local_changes": false,
+      "upstream": "https://github.com/ByteDance-Seed/Depth-Anything-3.git",
+      "license_files": [
+        "LICENSE"
+      ]
+    },
+    {
+      "directory": "sam3",
+      "independent_git_checkout": true,
+      "commit": "660a5e9e1b8b4c02c0ad97229b88a09a6e4ff5b7",
+      "has_local_changes": true,
+      "upstream": "https://github.com/facebookresearch/sam3.git",
+      "license_files": [
+        "LICENSE"
+      ],
+      "local_patch": "patches/sam3-local-cpu.patch"
+    },
+    {
+      "directory": "whisper.cpp",
+      "independent_git_checkout": true,
+      "commit": "a44e07845931421bb6f3447ce0010ed9dc76a118",
+      "has_local_changes": false,
+      "upstream": "https://github.com/ggml-org/whisper.cpp.git",
+      "license_files": [
+        "LICENSE"
+      ]
+    },
+    {
+      "directory": "Jarvis-Web",
+      "independent_git_checkout": false
+    }
+  ],
+  "system_packages": {
+    "ffmpeg": "7:6.1.1-3ubuntu5",
+    "alsa-utils": "1.2.9-1ubuntu5",
+    "pipewire": "1.0.5-1ubuntu3.3",
+    "pipewire-pulse": "1.0.5-1ubuntu3.3",
+    "wireplumber": "0.4.17-1ubuntu4.1",
+    "mpv": "0.37.0-1ubuntu4",
+    "espeak-ng": "1.51+dfsg-12build1",
+    "inotify-tools": "3.22.6.0-4",
+    "cmake": "3.28.3-1build7",
+    "playerctl": "2.4.1-2build2",
+    "pulseaudio-utils": "1:16.1+dfsg1-2ubuntu10.1"
+  },
+  "ollama_models": [
+    {
+      "name": "qwen3.5:0.8b",
+      "digest": "f3817196d142eaf72ce79dfebe53dcb20bd21da87ce13e138a8f8e10a866b3a4",
+      "size": 1036046583
+    }
+  ]
+}

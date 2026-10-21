@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+project_dir="${JARVIS_HOME:-$HOME/Jarvis}"
+footage_dir="$project_dir/Footage"
+camera_device="${JARVIS_CAMERA_DEVICE:-/dev/video0}"
+
+mkdir -p "$footage_dir"
+timestamp=$(date '+%Y-%m-%d_%H-%M-%S_%6N')
+output="$footage_dir/${timestamp}.jpg"
+
+ffmpeg -hide_banner -loglevel error -y \
+  -f v4l2 -input_format yuyv422 -video_size 640x480 \
+  -i "$camera_device" -frames:v 1 -q:v 2 "$output"
+
+printf '%s\n' "$output"

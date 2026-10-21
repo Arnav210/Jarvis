@@ -1,0 +1,150 @@
+diff --git a/sam3/model/decoder.py b/sam3/model/decoder.py
+index 578a2bf..49a4a7d 100644
+--- a/sam3/model/decoder.py
++++ b/sam3/model/decoder.py
+@@ -298,7 +298,7 @@ class TransformerDecoder(nn.Module):
+             if resolution is not None and stride is not None:
+                 feat_size = resolution // stride
+                 coords_h, coords_w = self._get_coords(
+-                    feat_size, feat_size, device="cuda"
++                    feat_size, feat_size, device="cpu"
+                 )
+                 self.compilable_cord_cache = (coords_h, coords_w)
+                 self.compilable_stored_size = (feat_size, feat_size)
+diff --git a/sam3/model/geometry_encoders.py b/sam3/model/geometry_encoders.py
+index f86cc97..ebec898 100644
+--- a/sam3/model/geometry_encoders.py
++++ b/sam3/model/geometry_encoders.py
+@@ -648,7 +648,7 @@ class SequenceGeometryEncoder(nn.Module):
+             # We need to denormalize, and convert to [x, y, x, y]
+             boxes_xyxy = box_cxcywh_to_xyxy(boxes)
+             scale = torch.tensor([W, H, W, H], dtype=boxes_xyxy.dtype)
+-            scale = scale.pin_memory().to(device=boxes_xyxy.device, non_blocking=True)
++            scale = scale.to(device=boxes_xyxy.device)
+             scale = scale.view(1, 1, 4)
+             boxes_xyxy = boxes_xyxy * scale
+             sampled = torchvision.ops.roi_align(
+diff --git a/sam3/model/position_encoding.py b/sam3/model/position_encoding.py
+index f38c62b..dde8fa7 100644
+--- a/sam3/model/position_encoding.py
++++ b/sam3/model/position_encoding.py
+@@ -52,7 +52,7 @@ class PositionEmbeddingSine(nn.Module):
+                 (precompute_resolution // 32, precompute_resolution // 32),
+             ]
+             for size in precompute_sizes:
+-                tensors = torch.zeros((1, 1) + size, device="cuda")
++                tensors = torch.zeros((1, 1) + size, device="cpu")
+                 self.forward(tensors)
+                 # further clone and detach it in the cache (just to be safe)
+                 self.cache[size] = self.cache[size].clone().detach()
+diff --git a/sam3/model/sam3_image_processor.py b/sam3/model/sam3_image_processor.py
+index f8439f5..dffc80c 100644
+--- a/sam3/model/sam3_image_processor.py
++++ b/sam3/model/sam3_image_processor.py
+@@ -14,7 +14,7 @@ from torchvision.transforms import v2
+ class Sam3Processor:
+     """ """
+ 
+-    def __init__(self, model, resolution=1008, device="cuda", confidence_threshold=0.5):
++    def __init__(self, model, resolution=1008, device="cpu", confidence_threshold=0.5):
+         self.model = model
+         self.resolution = resolution
+         self.device = device
+diff --git a/sam3/model/vl_combiner.py b/sam3/model/vl_combiner.py
+index c07fe91..a306fd2 100644
+--- a/sam3/model/vl_combiner.py
++++ b/sam3/model/vl_combiner.py
+@@ -122,7 +122,7 @@ class SAM3VLBackbone(nn.Module):
+         return output
+ 
+     def forward_text(
+-        self, captions, input_boxes=None, additional_text=None, device="cuda"
++        self, captions, input_boxes=None, additional_text=None, device="cpu"
+     ):
+         return activation_ckpt_wrapper(self._forward_text_no_ack_ckpt)(
+             captions=captions,
+@@ -137,7 +137,7 @@ class SAM3VLBackbone(nn.Module):
+         captions,
+         input_boxes=None,
+         additional_text=None,
+-        device="cuda",
++        device="cpu",
+     ):
+         output = {}
+ 
+@@ -326,7 +326,7 @@ class VisionOnly(nn.Module):
+         captions,
+         input_boxes=None,
+         additional_text=None,
+-        device="cuda",
++        device="cpu",
+     ):
+         bs = len(captions)
+         output = {
+diff --git a/sam3/model_builder.py b/sam3/model_builder.py
+index 602906b..c9a5442 100644
+--- a/sam3/model_builder.py
++++ b/sam3/model_builder.py
+@@ -572,7 +572,7 @@ def _setup_device_and_mode(model, device, eval_mode):
+ 
+ def build_sam3_image_model(
+     bpe_path=None,
+-    device="cuda" if torch.cuda.is_available() else "cpu",
++    device="cpu" if torch.cuda.is_available() else "cpu",
+     eval_mode=True,
+     checkpoint_path=None,
+     load_from_HF=True,
+@@ -596,9 +596,14 @@ def build_sam3_image_model(
+         A SAM3 image model
+     """
+     if bpe_path is None:
+-        bpe_path = pkg_resources.resource_filename(
+-            "sam3", "assets/bpe_simple_vocab_16e6.txt.gz"
+-        )
++    	current_dir = os.path.dirname(os.path.abspath(__file__))
++
++    	bpe_path = os.path.join(
++        	current_dir,
++        	"assets",
++        	"bpe_simple_vocab_16e6.txt.gz"
++    	)
++
+ 
+     # Create visual components
+     compile_mode = "default" if compile else None
+@@ -681,7 +686,7 @@ def build_sam3_video_model(
+     geo_encoder_use_img_cross_attn: bool = True,
+     strict_state_dict_loading: bool = True,
+     apply_temporal_disambiguation: bool = True,
+-    device="cuda" if torch.cuda.is_available() else "cpu",
++    device="cpu" if torch.cuda.is_available() else "cpu",
+     compile=False,
+ ) -> Sam3VideoInferenceWithInstanceInteractivity:
+     """
+@@ -941,7 +946,7 @@ def build_sam3_multiplex_video_model(
+     use_fa3: bool = False,
+     use_rope_real: bool = False,
+     strict_state_dict_loading: bool = True,
+-    device="cuda" if torch.cuda.is_available() else "cpu",
++    device="cpu" if torch.cuda.is_available() else "cpu",
+     compile=False,
+ ):
+     """
+diff --git a/sam3/perflib/fused.py b/sam3/perflib/fused.py
+index 6800cca..68420b5 100644
+--- a/sam3/perflib/fused.py
++++ b/sam3/perflib/fused.py
+@@ -10,6 +10,13 @@ addmm_act_op = torch.ops.aten._addmm_activation
+ def addmm_act(activation, linear, mat1):
+     if torch.is_grad_enabled():
+         raise ValueError("Expected grad to be disabled.")
++    if mat1.device.type != "cuda":
++        projected = linear(mat1)
++        if activation in [torch.nn.functional.relu, torch.nn.ReLU]:
++            return torch.nn.functional.relu(projected)
++        if activation in [torch.nn.functional.gelu, torch.nn.GELU]:
++            return torch.nn.functional.gelu(projected)
++        raise ValueError(f"Unexpected activation {activation}")
+     self = linear.bias.detach()
+     mat2 = linear.weight.detach()
+     self = self.to(torch.bfloat16)

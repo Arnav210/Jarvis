@@ -6,18 +6,18 @@ import sys
 import tempfile
 import time
 from unittest.mock import patch
-sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0,str(Path(__file__).resolve().parents[1] / 'src'))
 
 with tempfile.TemporaryDirectory(prefix='jarvis-panel-test-') as directory:
     os.environ['XDG_RUNTIME_DIR']=directory
     os.environ['JARVIS_MUSIC_SOCKET']=directory+'/player.sock'
-    import jarvis_music as music
+    from jarvis.music import jarvis_music as music
     from music_fixture import prepare_music
     prepare_music(directory, music)
-    import jarvis_music_duck as duck
-    import jarvis_music_panel as panel
+    from jarvis.music import jarvis_music_duck as duck
+    from jarvis.ui import jarvis_music_panel as panel
     panel.INDEX = music.MUSIC / 'library.json'
-    import jarvis_status as status
+    from jarvis.ui import jarvis_status as status
     assert panel.snapshot()['state']=='stopped'
     player=subprocess.Popen(['mpv','--no-config','--ao=null','--no-video','--idle=yes','--pause=yes','--terminal=no','--input-ipc-server='+str(music.SOCKET)],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
     try:

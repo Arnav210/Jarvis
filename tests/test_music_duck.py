@@ -6,15 +6,15 @@ import sys
 import tempfile
 import time
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 
 with tempfile.TemporaryDirectory(prefix='jarvis-duck-test-') as directory:
     os.environ['XDG_RUNTIME_DIR'] = directory
     os.environ['JARVIS_MUSIC_SOCKET'] = directory + '/player.sock'
-    import jarvis_music as music
+    from jarvis.music import jarvis_music as music
     from music_fixture import prepare_music
     prepare_music(directory, music)
-    import jarvis_music_duck as duck
+    from jarvis.music import jarvis_music_duck as duck
     player = None
 
     def start():
@@ -129,7 +129,7 @@ with tempfile.TemporaryDirectory(prefix='jarvis-duck-test-') as directory:
         print('PASS disappearing player cleans up without starting playback')
 
         # Exercise the actual wake-loop placement without reading the microphone.
-        import jarvis_wake as wake
+        from jarvis.audio import jarvis_wake as wake
         player = start()
         volume(67)
         class Model:

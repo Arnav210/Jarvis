@@ -4,7 +4,7 @@ set -euo pipefail
 project_dir="${JARVIS_HOME:-$HOME/Jarvis}"
 speak="$HOME/.local/bin/jarvis-speak"
 speaker_python="$project_dir/.venv-speaker/bin/python"
-speaker_tool="$project_dir/jarvis_speaker.py"
+speaker_tool="$project_dir/src/jarvis/audio/jarvis_speaker.py"
 audio_device="${JARVIS_MIC_DEVICE:-pipewire}"
 
 if [[ $# -ne 1 ]]; then

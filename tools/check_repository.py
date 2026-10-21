@@ -77,7 +77,9 @@ def main():
                     imports = ([n.module.split('.')[0]] if isinstance(n, ast.ImportFrom) and n.module else
                                [a.name.split('.')[0] for a in n.names] if isinstance(n, ast.Import) else [])
                     for module in imports:
-                        local = module + '.py'
+                        local = (n.module.replace('.', '/') + '.py') if isinstance(n, ast.ImportFrom) and n.module else module + '.py'
+                        if local.startswith('jarvis/'):
+                            local = 'src/' + local
                         if (ROOT / local).is_file() and local not in names:
                             errors.add(f'{name}: local dependency {local} is excluded')
             except SyntaxError as exc:

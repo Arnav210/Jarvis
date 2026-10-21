@@ -2,17 +2,17 @@
 set -euo pipefail
 
 project_dir="${JARVIS_HOME:-$HOME/Jarvis}"
-if [[ "${JARVIS_STATUS_CHILD:-0}" != 1 && -f "$project_dir/jarvis_status.py" ]]; then
-  exec python3 "$project_dir/jarvis_status.py" --run "$(readlink -f -- "${BASH_SOURCE[0]}")" "$@"
+if [[ "${JARVIS_STATUS_CHILD:-0}" != 1 && -f "$project_dir/src/jarvis/ui/jarvis_status.py" ]]; then
+  exec python3 "$project_dir/src/jarvis/ui/jarvis_status.py" --run "$(readlink -f -- "${BASH_SOURCE[0]}")" "$@"
 fi
 whisper_cli="$project_dir/whisper.cpp/build/bin/whisper-cli"
 whisper_model="${JARVIS_WHISPER_MODEL:-$project_dir/whisper.cpp/models/ggml-tiny.en.bin}"
 vad_model="${JARVIS_VAD_MODEL:-$project_dir/whisper.cpp/models/ggml-silero-v6.2.0.bin}"
 stt_url="${JARVIS_STT_URL:-http://127.0.0.1:8178/inference}"
-router="$project_dir/jarvis_assistant.py"
+router="$project_dir/src/jarvis/assistant/jarvis_assistant.py"
 speak="$HOME/.local/bin/jarvis-speak"
 speaker_python="$project_dir/.venv-speaker/bin/python"
-speaker_tool="$project_dir/jarvis_speaker.py"
+speaker_tool="$project_dir/src/jarvis/audio/jarvis_speaker.py"
 audio_device="${JARVIS_MIC_DEVICE:-pipewire}"
 listen_seconds="${JARVIS_LISTEN_SECONDS:-5}"
 # Every command recording is bounded, including caller-provided durations.
@@ -80,10 +80,10 @@ else
   fi
   printf 'Listening for %s seconds...\n' "$listen_seconds"
 
-  python3 "$project_dir/jarvis_mic_meter.py" --watch-wav "$command_audio" --seconds "$listen_seconds" &
+  python3 "$project_dir/src/jarvis/audio/jarvis_mic_meter.py" --watch-wav "$command_audio" --seconds "$listen_seconds" &
   meter_pid=$!
   record_status=0
-  python3 "$project_dir/jarvis_listen_control.py" --record -- timeout --foreground --signal=INT --kill-after=1s 10s arecord -q --device "$audio_device" --duration "$listen_seconds" \
+  python3 "$project_dir/src/jarvis/audio/jarvis_listen_control.py" --record -- timeout --foreground --signal=INT --kill-after=1s 10s arecord -q --device "$audio_device" --duration "$listen_seconds" \
     --format S16_LE --rate 16000 --channels 1 \
     "$command_audio" || record_status=$?
   stop_meter

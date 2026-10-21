@@ -2,4 +2,4 @@
 set -euo pipefail
 project_dir="${JARVIS_HOME:-$HOME/Jarvis}"
 if [[ $# -eq 0 ]]; then set -- --view; fi
-exec /usr/bin/python3 "$project_dir/jarvis_status.py" "$@"
+exec /usr/bin/python3 "$project_dir/src/jarvis/ui/jarvis_status.py" "$@"

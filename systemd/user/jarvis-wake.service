@@ -5,8 +5,8 @@ After=pipewire.service wireplumber.service jarvis-stt.service
 
 [Service]
 Type=simple
-ExecStartPre=/usr/bin/python3 %h/Jarvis/jarvis_ai.py --warm
-ExecStart=%h/Jarvis/.venv-wake/bin/python %h/Jarvis/jarvis_wake.py
+ExecStartPre=/usr/bin/python3 %h/Jarvis/src/jarvis/assistant/jarvis_ai.py --warm
+ExecStart=%h/Jarvis/.venv-wake/bin/python %h/Jarvis/src/jarvis/audio/jarvis_wake.py
 Restart=on-failure
 RestartSec=5
 Nice=5

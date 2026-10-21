@@ -2,9 +2,9 @@
 
 FOOTAGE="$HOME/Jarvis/Footage"
 
-PYTHON_SCRIPT="$HOME/Jarvis/sam3_process.py"
+PYTHON_SCRIPT="$HOME/Jarvis/src/jarvis/vision/sam3_process.py"
 
-MONITOR_SCRIPT="$HOME/Jarvis/object_monitor/object_monitor/object_monitor.py"
+MONITOR_SCRIPT="$HOME/Jarvis/src/jarvis/vision/object_monitor.py"
 
 PYTHON_BIN="$HOME/miniconda3/envs/sam3/bin/python"
 

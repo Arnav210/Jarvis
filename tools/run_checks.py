@@ -10,6 +10,9 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def main():
+    layout = subprocess.run([sys.executable, str(ROOT / 'tools/check_layout.py')], cwd=ROOT)
+    if layout.returncode:
+        return layout.returncode
     with tempfile.TemporaryDirectory(prefix='jarvis-checks-') as directory:
         root = Path(directory)
         home = root / 'home'
@@ -20,14 +23,14 @@ def main():
         env.update(HOME=str(home), XDG_RUNTIME_DIR=str(root / 'runtime'),
                    XDG_STATE_HOME=str(root / 'state'), XDG_CONFIG_HOME=str(root / 'config'),
                    JARVIS_HOME=str(home / 'Jarvis'), JARVIS_STATUS_FILE=str(root / 'status.json'),
-                   PYTHONDONTWRITEBYTECODE='1', PYTHONPATH=str(ROOT),
+                   PYTHONDONTWRITEBYTECODE='1', PYTHONPATH=os.pathsep.join([str(ROOT / 'src'), str(ROOT / 'tests')]),
                    JARVIS_MUSIC_SOCKET=str(root / 'no-live-player.sock'))
         env.pop('DISPLAY', None)
         env.pop('WAYLAND_DISPLAY', None)
         for path in ['runtime', 'state', 'config']:
             (root / path).mkdir(mode=0o700)
-        commands = [[sys.executable, '-m', 'unittest', 'discover', '-s', '.', '-p', 'test_*.py', '-v']]
-        commands += [[sys.executable, str(f)] for f in sorted((ROOT / 'tests').glob('test_*.py'))]
+        commands = [[sys.executable, '-m', 'unittest', 'discover', '-s', 'tests', '-p', 'unit_*.py', '-v']]
+        commands += [[sys.executable, str(ROOT / 'tests' / name)] for name in ('test_console_design.py', 'test_music_duck.py', 'test_music_panel.py')]
         for command in commands:
             print('CHECK:', ' '.join(command), flush=True)
             try:

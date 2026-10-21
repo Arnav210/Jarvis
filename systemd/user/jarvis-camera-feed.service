@@ -3,7 +3,7 @@ Description=Jarvis shared local webcam feed
 
 [Service]
 Type=exec
-ExecStart=/usr/bin/python3 %h/Jarvis/jarvis_camera_feed.py
+ExecStart=/usr/bin/python3 %h/Jarvis/src/jarvis/vision/jarvis_camera_feed.py
 Restart=on-failure
 RestartSec=3
 TimeoutStopSec=10

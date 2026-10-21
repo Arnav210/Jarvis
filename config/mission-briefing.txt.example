@@ -1,0 +1,15 @@
+# Edit the date and fill in the fields before class.
+# DATE must use YYYY-MM-DD. TASKS and ASSIGNMENTS use dash-prefixed items.
+# ASSIGNMENTS and SUCCESS are optional. Remove the # from example list items.
+DATE: 2026-10-21
+MISSION:
+
+TASKS:
+# - First task
+# - Second task
+# - Third task
+
+ASSIGNMENTS:
+# - Name: responsibility
+
+SUCCESS:

@@ -2,10 +2,10 @@
 
 ## Tracked source
 
-First-party Python modules remain at their existing paths. Terminal commands are in `bin/`.
-Tests remain in their two current locations, with a single runner under `tools/`.
-Documentation, service templates, example settings, dependency snapshots, and the preserved
-SAM3 compatibility patch are included explicitly in `.gitignore`.
+First-party Python code lives in `src/jarvis/`, grouped by function. Terminal commands
+are in `bin/`. All tests are in `tests/`, with one runner under `tools/`.
+Documentation, service templates, example settings, dependency snapshots, and
+the SAM3 compatibility patch are included explicitly in `.gitignore`.
 Third-party source and model weights are provisioned separately; see `SETUP.md`.
 
 ## Private files
@@ -15,7 +15,7 @@ Never include `data/` (including all Captain's Log recordings and music), `Foota
 or runtime state. Keep a separate private backup of irreplaceable recordings and profiles.
 `sam3/`, `whisper.cpp/`, `Depth-Anything-3/`, and `Jarvis-Web/` are excluded. The web project
 is not included implicitly; it needs its own explicit scope and review.
-Editor backups and the stray `ha256sum jarvis_console_layout.py` file remain ignored.
+Old editor backups and the stray diagnostic text file are preserved under ignored `archive/`.
 
 Ignore rules do not remove already committed data. Run `tools/check_repository.py --history`
 before publication; it inspects reachable file paths and recognizable credential patterns.
@@ -31,15 +31,11 @@ first-party public licensing has not been selected. Do not grant third-party rig
 
 ## Service reconciliation
 
-The installed wake service stores the one-command setting in `20-single-command.conf`.
-The repository now follows the same structure and retains `30-music-duck.conf`.
-The installed SAM3 unit still names the old root launcher; the repository template uses
-the current `bin/run_sam.sh` path. Templates now use `%h` instead of a particular username.
-The stream template accepts `JARVIS_STREAM_MIC` rather than embedding a device serial.
-These changes prepare future installation; live units are not replaced or restarted.
+Repository templates and installed user units now use the `src/jarvis/` paths.
+The SAM3 watcher uses `bin/run_sam.sh`; its processor source is byte-identical to
+the baseline. Existing user-service overrides and hardware configuration remain.
+The wake and SAM3 watcher services were restarted because they were already active.
 
-## Future refactoring
-
-Moving Python modules into a package and consolidating tests are separate code changes:
-imports, launchers, service paths, and path-sensitive tests must move together.
-The current preparation keeps deployed paths stable.
+The root-owned system depth unit retains `depth_service.py`, a compatibility entry
+point forwarding to `src/jarvis/vision/depth_service.py`. Updating the system unit
+itself requires an administrator. See `REORGANIZATION.md` for the scope of this phase.

@@ -6,7 +6,7 @@ Description=Jarvis captain's log recorder
 [Service]
 Environment=JARVIS_LOG_VIDEO_URL=http://127.0.0.1:8766/stream.mjpg
 Type=exec
-ExecStart=/usr/bin/python3 %h/Jarvis/jarvis_log.py record
+ExecStart=/usr/bin/python3 %h/Jarvis/src/jarvis/recording/jarvis_log.py record
 Environment=JARVIS_MIC_DEVICE=pipewire
 KillSignal=SIGINT
 KillMode=mixed

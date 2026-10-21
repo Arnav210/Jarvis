@@ -1,9 +1,9 @@
 """Regression checks for readable, bounded terminal presentation."""
 from pathlib import Path
 import sys
-sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-import jarvis_console_layout as layout
-import jarvis_status as status
+sys.path.insert(0,str(Path(__file__).resolve().parents[1] / 'src'))
+from jarvis.ui import jarvis_console_layout as layout
+from jarvis.ui import jarvis_status as status
 
 data={'stage':'complete','result':'0','started':'100','updated':113,
       'speaker':'Xavier (similarity 0.039, margin 0.033)',

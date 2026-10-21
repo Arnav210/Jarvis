@@ -22,8 +22,8 @@ sudo apt-get install mpv
 
 Tests create temporary state and synthetic WAVs. Integration players use `--ao=null` and
 private temporary sockets. They do not need your recordings, music, camera, microphone,
-enrolled speakers, or model downloads. Root tests remain beside source because some read
-neighboring modules; `tools/run_checks.py` runs both test locations.
+enrolled speakers, or model downloads. All tests live in `tests/`; `tools/run_checks.py` runs the unit suite and the three
+standalone integration scripts against the package under `src/`.
 
 ## System tools
 
@@ -108,8 +108,8 @@ git -C sam3 apply --check ../patches/sam3-local-cpu.patch
 git -C sam3 apply ../patches/sam3-local-cpu.patch
 ```
 
-The patch captures existing edits; repository preparation does not change the active
-SAM3 script or third-party checkout. Build/install the upstream project in the dedicated
+The patch captures existing edits. The source reorganization moves the byte-identical
+SAM3 processor to `src/jarvis/vision/sam3_process.py`; the third-party checkout is unchanged. Build/install the upstream project in the dedicated
 environment following its pinned checkout. SAM3 checkpoint access uses your own existing
 model-provider account and terms; authentication tokens stay outside the repository.
 
@@ -156,7 +156,9 @@ On a new machine, compare templates and configure hardware before copying select
 to `~/.config/systemd/user/`. Copy the wake override directory along with the wake unit.
 Then run `systemctl --user daemon-reload` and start only the services you intend to use.
 Captain's Log and music are on-demand services. Starting wake/camera/stream services
-activates the corresponding hardware. This preparation run does not install or restart units.
+activates the corresponding hardware. The source migration updated installed user-service paths and restarted only the
+previously active wake listener and SAM3 watcher. A fresh installation still requires
+reviewing and installing the templates explicitly.
 
 ## Recovery data
 

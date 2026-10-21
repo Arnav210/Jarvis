@@ -1,6 +1,6 @@
 # Architecture
 
-Source inventory updated 2026-10-20. This describes components, not a live health check.
+Source inventory updated 2026-10-21. This describes components, not a live health check.
 
 ## Voice and command path
 
@@ -52,3 +52,42 @@ Recordings, footage, masks, voice profiles, conversation history, music, models,
 credentials, and generated state stay outside version control. The console uses
 per-user runtime state. The source checks and regression tests use temporary state.
 See `REPOSITORY.md` for the explicit Git boundary.
+
+## Package layout
+
+First-party modules now live under `src/jarvis/`. The source migration maps:
+
+- `config.py` → `src/jarvis/vision/config.py`
+- `depth_service.py` → `src/jarvis/vision/depth_service.py`
+- `gesture_analyzer.py` → `src/jarvis/vision/gesture_analyzer.py`
+- `gesture_controller.py` → `src/jarvis/vision/gesture_controller.py`
+- `jarvis_activity.py` → `src/jarvis/assistant/jarvis_activity.py`
+- `jarvis_ai.py` → `src/jarvis/assistant/jarvis_ai.py`
+- `jarvis_assistant.py` → `src/jarvis/assistant/jarvis_assistant.py`
+- `jarvis_bargein.py` → `src/jarvis/audio/jarvis_bargein.py`
+- `jarvis_camera_feed.py` → `src/jarvis/vision/jarvis_camera_feed.py`
+- `jarvis_computer.py` → `src/jarvis/computer/jarvis_computer.py`
+- `jarvis_console_layout.py` → `src/jarvis/ui/jarvis_console_layout.py`
+- `jarvis_halloween.py` → `src/jarvis/ui/jarvis_halloween.py`
+- `jarvis_idle_drone.py` → `src/jarvis/ui/jarvis_idle_drone.py`
+- `jarvis_image_view.py` → `src/jarvis/ui/jarvis_image_view.py`
+- `jarvis_listen_control.py` → `src/jarvis/audio/jarvis_listen_control.py`
+- `jarvis_log.py` → `src/jarvis/recording/jarvis_log.py`
+- `jarvis_manual_listen.py` → `src/jarvis/audio/jarvis_manual_listen.py`
+- `jarvis_mic_meter.py` → `src/jarvis/audio/jarvis_mic_meter.py`
+- `jarvis_music.py` → `src/jarvis/music/jarvis_music.py`
+- `jarvis_music_duck.py` → `src/jarvis/music/jarvis_music_duck.py`
+- `jarvis_music_panel.py` → `src/jarvis/ui/jarvis_music_panel.py`
+- `jarvis_preview.py` → `src/jarvis/vision/jarvis_preview.py`
+- `jarvis_reactor.py` → `src/jarvis/ui/jarvis_reactor.py`
+- `jarvis_remarks.py` → `src/jarvis/ui/jarvis_remarks.py`
+- `jarvis_reset.py` → `src/jarvis/computer/jarvis_reset.py`
+- `jarvis_speaker.py` → `src/jarvis/audio/jarvis_speaker.py`
+- `jarvis_spotify.py` → `src/jarvis/music/jarvis_spotify.py`
+- `jarvis_status.py` → `src/jarvis/ui/jarvis_status.py`
+- `jarvis_vitals.py` → `src/jarvis/ui/jarvis_vitals.py`
+- `jarvis_wake.py` → `src/jarvis/audio/jarvis_wake.py`
+- `measure_photo.py` → `src/jarvis/vision/measure_photo.py`
+- `mediapipe_tracker.py` → `src/jarvis/vision/mediapipe_tracker.py`
+- `object_monitor/object_monitor/object_monitor.py` → `src/jarvis/vision/object_monitor.py`
+- `sam3_process.py` → `src/jarvis/vision/sam3_process.py`

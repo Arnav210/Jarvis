@@ -6,21 +6,27 @@ and optional camera analysis and Captain's Log recording.
 
 ## Start here
 
+- [Iron Man: Skyfall](docs/IRON_MAN.md): 54-second 3D ASCII film.
+
+- [Daily mission briefing](docs/MISSION_BRIEFING.md): local text file, voice command, and silent preview.
+
 - [Setup and recovery](docs/SETUP.md): environments, dependencies, models, configuration, and service installation.
 - [Architecture](docs/ARCHITECTURE.md): component map and source layout.
 - [Operations](docs/OPERATIONS.md): inspection and maintenance commands.
 - [Repository policy](docs/REPOSITORY.md): source inclusion and private data boundaries.
 - [Readiness report](docs/READINESS.md): preparation checks and verification limits.
-- [Computer awareness](COMPUTER_AWARENESS.md): bounded local inspection capabilities.
+- [Computer awareness](docs/COMPUTER_AWARENESS.md): bounded local inspection capabilities.
+
+See [the migration notes](docs/REORGANIZATION.md) for compatibility and recovery details.
 
 ## Source layout
 
 | Location | Purpose |
 | --- | --- |
 | `bin/` | User command launchers. |
-| Root Python modules | Voice, console, controls, recording, and optional vision components. |
+| `src/jarvis/` | First-party package: assistant, audio, vision, computer, music, UI, and recording. |
 | `systemd/user/` | Service templates and wake overrides. |
-| Root `test_*.py`, `tests/` | Existing regression checks and synthetic test fixtures. |
+| `tests/` | Consolidated unit and silent integration checks, plus synthetic fixtures. |
 | `tools/` | Repository audit and isolated test runner. |
 | `requirements/`, `config/` | Observed dependency versions and example settings. |
 | `patches/` | Preserved third-party SAM3 compatibility changes and upstream notice. |

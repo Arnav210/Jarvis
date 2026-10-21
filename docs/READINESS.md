@@ -66,3 +66,15 @@ repository and push the reviewed local baseline when ready. Public licensing for
 first-party code has not been selected; third-party notices are preserved separately.
 The installed legacy SAM3 service path is documented; deploying the corrected template
 is a separate runtime change, not required to store source on GitHub.
+
+
+## Source organization update — 2026-10-21
+
+First-party modules are now organized under `src/jarvis/`, tests consolidated under
+`tests/`, and computer-awareness documentation moved into `docs/`. Launchers,
+subprocess paths, installed user-service definitions, and repository templates were
+updated together. `Footage/` and `Masks/` remain top-level private directories.
+The wake listener and SAM3 watcher returned to active state after migration. This
+does not establish physical wake detection, room audibility, or model inference.
+The depth system service uses a compatibility entry point until an administrator
+changes its root-owned unit. Third-party checkouts and model environments stay put.

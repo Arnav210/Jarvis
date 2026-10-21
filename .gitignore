@@ -9,19 +9,12 @@
 !/systemd/
 
 # Active Jarvis source and command wrappers
-!/jarvis-ai
-!/jarvis-camera
-!/jarvis-enroll
-!/jarvis-identify
-!/jarvis-listen
-!/jarvis-speak
 !/jarvis_ai.py
 !/jarvis_assistant.py
 !/jarvis_speaker.py
 !/jarvis_wake.py
 !/jarvis_bargein.py
 !/sam3_process.py
-!/run_sam.sh
 
 # Optional source-only experiments (models and outputs remain ignored)
 !/measure_photo.py
@@ -64,3 +57,112 @@
 /Depth-Anything-3/
 /sam3/
 /whisper.cpp/
+
+# Captain log source; recorded entries remain private under data.
+!/jarvis_log.py
+
+# Shared local camera capture source.
+!/jarvis_camera_feed.py
+
+# Command launchers live in bin; include only these source files.
+!/bin/
+/bin/*
+!/bin/jarvis-ai
+!/bin/jarvis-camera
+!/bin/jarvis-enroll
+!/bin/jarvis-identify
+!/bin/jarvis-listen
+!/bin/jarvis-speak
+!/bin/run_sam.sh
+!/bin/jarvis-log
+
+# Live command console source and launcher
+!/jarvis_status.py
+!/bin/jarvis-status
+
+# Local music controller; downloaded media remains private under data.
+!/jarvis_music.py
+!/bin/jarvis-music
+
+# GitHub preparation: current first-party source and existing tests.
+!/config.py
+!/depth_service.py
+!/gesture_analyzer.py
+!/gesture_controller.py
+!/jarvis_activity.py
+!/jarvis_computer.py
+!/jarvis_console_layout.py
+!/jarvis_halloween.py
+!/jarvis_idle_drone.py
+!/jarvis_image_view.py
+!/jarvis_listen_control.py
+!/jarvis_manual_listen.py
+!/jarvis_mic_meter.py
+!/jarvis_music_duck.py
+!/jarvis_music_panel.py
+!/jarvis_preview.py
+!/jarvis_reactor.py
+!/jarvis_remarks.py
+!/jarvis_reset.py
+!/jarvis_spotify.py
+!/jarvis_vitals.py
+!/test_activity_captions.py
+!/test_jarvis_computer.py
+!/test_manual_listen.py
+!/test_mic_meter.py
+!/test_processing_clock.py
+!/test_reactor.py
+!/test_remarks.py
+!/test_response_reveal.py
+!/COMPUTER_AWARENESS.md
+!/bin/jarvis-computer
+!/bin/jarvis-preview
+!/bin/jarvis-reset
+!/bin/jarvis-vitals
+
+# Include source tests; keep their generated cache and fixtures private.
+!/tests/
+/tests/**
+!/tests/*.py
+
+# Private configuration and generated files, including inside allowed folders.
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+*.log
+__pycache__/
+*.pyc
+*.save
+*.bak
+*.backup
+*.before-*
+*.before_*
+*.backup-*
+*.bak-*
+
+# Repository tooling and setup assets (source only).
+!/tools/
+/tools/**
+!/tools/*.py
+!/requirements/
+/requirements/**
+!/requirements/*.txt
+!/requirements/observed-environments.json
+!/.github/
+/.github/**
+!/.github/workflows/
+!/.github/workflows/checks.yml
+!/config/
+/config/**
+!/config/jarvis.env.example
+!/patches/
+/patches/**
+!/patches/sam3-local-cpu.patch
+!/patches/SAM3-LICENSE
+!/patches/README.md
+
+# Native dependencies installed through Conda, separately from Python metadata.
+!/requirements/observed-conda.json

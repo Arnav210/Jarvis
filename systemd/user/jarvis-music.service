@@ -1,0 +1,12 @@
+[Unit]
+Description=Jarvis local music player
+After=pipewire.service wireplumber.service
+
+[Service]
+Type=simple
+RuntimeDirectory=jarvis-music
+RuntimeDirectoryMode=0700
+UMask=0077
+ExecStart=/usr/bin/mpv --no-config --no-video --idle=yes --pause=yes --terminal=no --input-ipc-server=%t/jarvis-music/player.sock --volume=100
+Restart=on-failure
+RestartSec=2

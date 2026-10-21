@@ -45,6 +45,8 @@ PEOPLE_CLASS = "person"
 # HELPER FUNCTIONS
 # ============================================================
 
+RUN_EVENTS = []
+
 def log_event(event_type, message, data=None):
 
     event = {
@@ -56,6 +58,8 @@ def log_event(event_type, message, data=None):
 
     with EVENT_LOG.open("a", encoding="utf-8") as file:
         file.write(json.dumps(event) + "\n")
+
+    RUN_EVENTS.append(event)
 
 
 def save_state(state):
@@ -137,21 +141,110 @@ raw_detections = manifest.get(
 
 
 # ============================================================
-# FILTER DETECTIONS
+# FILTER + DEDUPLICATE DETECTIONS
 # ============================================================
 
 detections = [
-
     detection
-
     for detection in raw_detections
-
-    if detection.get(
-        "score",
-        0
-    ) >= MIN_SCORE
+    if detection.get("score", 0) >= MIN_SCORE
 ]
 
+
+def box_iou(box_a, box_b):
+    ax1, ay1, ax2, ay2 = box_a
+    bx1, by1, bx2, by2 = box_b
+
+    intersection_x1 = max(ax1, bx1)
+    intersection_y1 = max(ay1, by1)
+    intersection_x2 = min(ax2, bx2)
+    intersection_y2 = min(ay2, by2)
+
+    intersection_width = max(0, intersection_x2 - intersection_x1)
+    intersection_height = max(0, intersection_y2 - intersection_y1)
+
+    intersection_area = intersection_width * intersection_height
+
+    area_a = max(0, ax2 - ax1) * max(0, ay2 - ay1)
+    area_b = max(0, bx2 - bx1) * max(0, by2 - by1)
+
+    union_area = area_a + area_b - intersection_area
+
+    if union_area == 0:
+        return 0
+
+    return intersection_area / union_area
+
+def box_containment(box_a, box_b):
+    ax1, ay1, ax2, ay2 = box_a
+    bx1, by1, bx2, by2 = box_b
+
+    intersection_x1 = max(ax1, bx1)
+    intersection_y1 = max(ay1, by1)
+    intersection_x2 = min(ax2, bx2)
+    intersection_y2 = min(ay2, by2)
+
+    intersection_width = max(0, intersection_x2 - intersection_x1)
+    intersection_height = max(0, intersection_y2 - intersection_y1)
+
+    intersection_area = intersection_width * intersection_height
+
+    area_a = max(0, ax2 - ax1) * max(0, ay2 - ay1)
+    area_b = max(0, bx2 - bx1) * max(0, by2 - by1)
+
+    smaller_area = min(area_a, area_b)
+
+    if smaller_area == 0:
+        return 0
+
+    return intersection_area / smaller_area
+
+def deduplicate_detections(detections, iou_threshold=0.45):
+    kept = []
+
+    sorted_detections = sorted(
+        detections,
+        key=lambda d: d["score"],
+        reverse=True
+    )
+
+    for detection in sorted_detections:
+        duplicate = False
+
+        for existing in kept:
+            if detection["prompt"] != existing["prompt"]:
+                continue
+
+            overlap = box_iou(
+                detection["box"],
+                existing["box"]
+            )
+
+            containment = box_containment(
+                detection["box"],
+                existing["box"]
+            )
+
+            if overlap >= iou_threshold or containment >= 0.70:
+                duplicate = True
+                break
+
+        if not duplicate:
+            kept.append(detection)
+
+    return kept
+
+
+before_count = len(detections)
+
+detections = deduplicate_detections(detections)
+
+after_count = len(detections)
+
+if before_count != after_count:
+    print(
+        f"Removed {before_count - after_count} duplicate detection(s)."
+    )
 
 # ============================================================
 # LOAD PERSISTENT STATE
@@ -200,6 +293,8 @@ state.setdefault(
 # ============================================================
 # PREVENT PROCESSING SAME IMAGE TWICE
 # ============================================================
+
+previous_run_id = state["last_run_id"]
 
 if state["last_run_id"] == run_id:
 
@@ -719,6 +814,44 @@ state["last_run_id"] = run_id
 save_state(
     state
 )
+
+
+
+# ============================================================
+# PER_CAPTURE_CHANGELOG_V1
+# ============================================================
+
+run_folder = JARVIS / "Masks" / "runs" / run_id
+
+if run_folder.is_dir():
+    changes_file = run_folder / "changes.json"
+
+    change_types = {
+        "new_object",
+        "object_missing",
+        "object_returned",
+        "person_count_changed",
+    }
+
+    report = {
+        "current_capture": run_id,
+        "previous_capture": previous_run_id,
+        "changes": [
+            event for event in RUN_EVENTS
+            if event["event"] in change_types
+        ],
+    }
+
+    temporary_file = run_folder / "changes.json.tmp"
+    temporary_file.write_text(
+        json.dumps(report, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    temporary_file.replace(changes_file)
+
+    print(f"Capture change log saved: {changes_file}")
+else:
+    print(f"WARNING: Capture folder not found: {run_folder}")
 
 
 # ============================================================

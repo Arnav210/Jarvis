@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+project_dir="${JARVIS_HOME:-$HOME/Jarvis}"
+exec python3 "$project_dir/jarvis_log.py" "$@"

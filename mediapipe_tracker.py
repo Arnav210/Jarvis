@@ -5,13 +5,12 @@ from mediapipe.tasks.python import vision
 
 class HandTracker:
     def __init__(self, model_path="hand_landmarker.task"):
-        # Configure MediaPipe Tasks API
         base_options = python.BaseOptions(model_asset_path=model_path)
         options = vision.HandLandmarkerOptions(
             base_options=base_options,
             num_hands=1,
-            min_hand_detection_confidence=0.7,
-            min_tracking_confidence=0.7
+            min_hand_detection_confidence=0.5,  # Lowered threshold for better edge framing
+            min_tracking_confidence=0.5          # Lowered threshold to prevent dropouts
         )
         self.detector = vision.HandLandmarker.create_from_options(options)
         self.cap = None
@@ -23,45 +22,26 @@ class HandTracker:
 
     def get_landmarks(self):
         if not self.cap or not self.cap.isOpened():
-            return None, None
+            return None, None, None
 
         ret, frame = self.cap.read()
         if not ret:
-            return None, None
+            return None, None, None
 
-        # Convert frame to MediaPipe Image format
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
 
-        # Process frame
         detection_result = self.detector.detect(mp_image)
 
         if detection_result.hand_landmarks:
-            # Return landmarks array for the first hand detected
             hand_landmarks = detection_result.hand_landmarks[0]
-            return hand_landmarks, frame
+            # Extract dynamic Left/Right hand label from MediaPipe detection
+            handedness_label = detection_result.handedness[0][0].category_name
+            return hand_landmarks, frame, handedness_label
         
-        return None, frame
+        return None, frame, None
 
     def stop_camera(self):
         if self.cap:
             self.cap.release()
             cv2.destroyAllWindows()
-
-if __name__ == "__main__":
-    print("Testing MediaPipe 1.0+ Hand Tracker...")
-    tracker = HandTracker()
-    tracker.start_camera()
-
-    try:
-        while True:
-            landmarks, _ = tracker.get_landmarks()
-            if landmarks:
-                # Landmark 9 is the Middle Finger MCP (Palm Center)
-                center_node = landmarks[9]
-                print(f"Hand Detected! Center (X, Y): ({center_node.x:.2f}, {center_node.y:.2f})", end="\r")
-            else:
-                print("No hand detected...                            ", end="\r")
-    except KeyboardInterrupt:
-        print("\nStopping tracker...")
-        tracker.stop_camera()

@@ -1,43 +1,54 @@
 # Architecture
 
-Snapshot: September 25, 2026.
+Source inventory updated 2026-10-20. This describes components, not a live health check.
 
-## Voice pipeline
+## Voice and command path
 
-- `jarvis-wake.service` runs `.venv-wake/bin/python jarvis_wake.py` continuously.
-- `jarvis_wake.py` reads 16 kHz mono audio through PipeWire and detects `hey_jarvis_v0.1.onnx` with openWakeWord.
-- On detection it preserves about 1.2 seconds of pre-roll and continues reading the same microphone stream, so words spoken immediately after `Hey Jarvis` are not discarded.
-- Command capture ends after roughly 0.8 seconds of silence or at an eight-second maximum, then the temporary local WAV is passed to `jarvis-listen` without a spoken prompt.
-- `jarvis-listen` transcribes with Whisper.cpp, labels the closest enrolled speaker with `jarvis_speaker.py`, and invokes `jarvis_assistant.py`. Direct manual use retains its normal prompt and five-second recording.
-- While that command is active, `jarvis_bargein.py` listens in short local-only windows for strict cancellation phrases and terminates the command process group without a spoken acknowledgment.
-- `jarvis_assistant.py` runs deterministic routes first and calls `jarvis_ai.py` only for unmatched requests.
-- `jarvis_ai.py` calls Ollama at localhost through an explicit function allowlist. It has no arbitrary shell tool.
-- `jarvis-speak` uses Piper, falls back to eSpeak-NG, and plays through PipeWire.
+PipeWire microphone → `jarvis_wake.py` / openWakeWord → captured command WAV →
+`bin/jarvis-listen` → local Whisper server and `jarvis_speaker.py` →
+`jarvis_assistant.py` deterministic routing → optional `jarvis_ai.py` / local Ollama →
+`bin/jarvis-speak` / Piper (eSpeak fallback) → PipeWire playback.
 
-## Vision pipeline
+`jarvis_bargein.py` handles cancellation. The wake override sets one command per wake
+phrase. `jarvis_listen_control.py`, `jarvis_manual_listen.py`, and `jarvis_reset.py`
+coordinate command ownership and reset state. `jarvis_mic_meter.py` derives display levels.
 
-- `jarvis-camera` captures one 640x480 JPEG from `/dev/video0` into `Footage/` with a microsecond timestamp.
-- `jarvis-sam3.service` runs `run_sam.sh`, which watches `Footage/` for completed JPEG writes.
-- `sam3_process.py` uses the dedicated Python 3.12 SAM3 environment and CPU inference.
-- Each completed analysis is stored in `Masks/runs/<capture-timestamp>/` with the original, raw masks, per-mask overlays, a combined overlay, and `manifest.json`.
-- `Masks/latest` is a symlink to the newest complete run. It is required by the scene tools and object monitor.
-- `object_monitor/object_monitor/object_monitor.py` compares detections with persistent state and appends events. State and event files are intentionally not tracked.
+`jarvis_status.py`, `jarvis_console_layout.py`, `jarvis_reactor.py`, `jarvis_remarks.py`,
+`jarvis_activity.py`, `jarvis_idle_drone.py`, and `jarvis_halloween.py` implement console
+state and presentation. `jarvis_vitals.py` provides system telemetry. `jarvis_computer.py`
+provides bounded local inspection; `jarvis_image_view.py` displays requested images.
 
-## Services
+`jarvis_music.py` controls a local MPV user service through a private IPC socket.
+`jarvis_music_duck.py` lowers only that player's level during commands and restores it;
+`jarvis_music_panel.py` provides telemetry. `jarvis_spotify.py` is a separate optional path.
 
-Tracked templates are in `systemd/user/`. Live units reside in `~/.config/systemd/user/`.
+## Recording and vision
 
-- `jarvis-wake.service`: enabled and active at the snapshot.
-- `jarvis-sam3.service`: enabled and active at the snapshot.
-- `jarvis-stream.service`: disabled and failed at the snapshot; it is separate from photo analysis.
+`jarvis_camera_feed.py` provides the shared loopback MJPEG feed at port 8766.
+`jarvis_log.py` records requested Captain's Logs under `data/captains-log/`;
+`jarvis_preview.py` handles preview. The remote stream consumes the shared feed and
+PipeWire microphone separately from photo analysis.
 
-## Private and generated data
+`bin/jarvis-camera` writes captures to `Footage/`; `bin/run_sam.sh` watches for completed
+JPEG writes and invokes `sam3_process.py` in the dedicated SAM3 environment. Completed
+results are stored under `Masks/runs/`, with `Masks/latest` identifying the newest run.
+`object_monitor/object_monitor/object_monitor.py` compares observations with local state.
 
-Never commit:
+Optional `depth_service.py` and `measure_photo.py` use Depth Anything 3.
+`gesture_controller.py`, `gesture_analyzer.py`, `mediapipe_tracker.py`, and `config.py`
+implement camera-based gesture control. These are separate optional components, not
+requirements for running the source regression checks.
 
-- `Footage/` and `Masks/`
-- `VoiceProfiles/`
-- `data/conversation_history.json`
-- `models/`, `voices/`, and model binaries
-- `.venv-*`, caches, or runtime state
-- nested third-party repositories
+## Services and dependencies
+
+Repository templates live in `systemd/user/`; installed units live under
+`~/.config/systemd/user/`. They are deployed separately. The wake templates include the
+single-command and music-recovery drop-ins. The SAM3 template points to `bin/run_sam.sh`.
+See `SETUP.md` for environment boundaries and `DEPENDENCIES.json` for observed revisions.
+
+## State boundaries
+
+Recordings, footage, masks, voice profiles, conversation history, music, models,
+credentials, and generated state stay outside version control. The console uses
+per-user runtime state. The source checks and regression tests use temporary state.
+See `REPOSITORY.md` for the explicit Git boundary.

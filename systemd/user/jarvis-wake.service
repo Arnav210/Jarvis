@@ -1,10 +1,12 @@
 [Unit]
 Description=Jarvis Hey Jarvis wake-word listener
-After=pipewire.service wireplumber.service
+Wants=jarvis-stt.service
+After=pipewire.service wireplumber.service jarvis-stt.service
 
 [Service]
 Type=simple
-ExecStart=/home/toby/Jarvis/.venv-wake/bin/python /home/toby/Jarvis/jarvis_wake.py
+ExecStartPre=/usr/bin/python3 %h/Jarvis/jarvis_ai.py --warm
+ExecStart=%h/Jarvis/.venv-wake/bin/python %h/Jarvis/jarvis_wake.py
 Restart=on-failure
 RestartSec=5
 Nice=5
@@ -12,6 +14,11 @@ Environment=PYTHONUNBUFFERED=1
 Environment=OMP_NUM_THREADS=1
 Environment=JARVIS_MIC_DEVICE=pipewire
 Environment=JARVIS_WAKE_THRESHOLD=0.50
+Environment=JARVIS_COMMAND_SILENCE_SECONDS=0.6
+Environment=JARVIS_AI_MODEL=qwen3.5:0.8b
+Environment=JARVIS_AI_KEEP_ALIVE=24h
+Environment=JARVIS_AI_NUM_CTX=1024
+Environment=JARVIS_AI_MAX_PREDICT=64
 
 [Install]
 WantedBy=default.target

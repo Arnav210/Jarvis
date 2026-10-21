@@ -8,7 +8,7 @@ fi
 
 message="$*"
 script_path=$(readlink -f -- "${BASH_SOURCE[0]}")
-script_dir=$(dirname -- "$script_path")
+script_dir="${JARVIS_HOME:-$(dirname -- "$(dirname -- "$script_path")")}"
 piper_bin="${JARVIS_PIPER_BIN:-$script_dir/.venv-tts/bin/piper}"
 piper_model="${JARVIS_PIPER_MODEL:-$script_dir/voices/en_GB-alan-medium/en_GB-alan-medium.onnx}"
 length_scale="${JARVIS_LENGTH_SCALE:-1.05}"
@@ -16,6 +16,7 @@ sentence_silence="${JARVIS_SENTENCE_SILENCE:-0.2}"
 piper_volume="${JARVIS_PIPER_VOLUME:-1.0}"
 lead_in_ms="${JARVIS_LEAD_IN_MS:-600}"
 engine="${JARVIS_ENGINE:-piper}"
+playback_latency="${JARVIS_PLAYBACK_LATENCY:-200ms}"
 runtime_dir="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 lock_file="$runtime_dir/jarvis-speak.lock"
 
@@ -28,10 +29,10 @@ trap 'rm -f "$audio_file" "$playback_file"' EXIT
 
 play_with_lead_in() {
     if ffmpeg -hide_banner -loglevel error -y -i "$audio_file" \
-        -af "adelay=${lead_in_ms}:all=1" "$playback_file"; then
-        pw-play "$playback_file"
+        -af "adelay=${lead_in_ms}:all=1" -ar 48000 -ac 2 -c:a pcm_s16le "$playback_file"; then
+        pw-play --latency "$playback_latency" "$playback_file"
     else
-        pw-play "$audio_file"
+        pw-play --latency "$playback_latency" "$audio_file"
     fi
 }
 

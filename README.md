@@ -1,35 +1,60 @@
 # Jarvis
 
-Local voice and vision assistant running on the Ubuntu Mac mini at `/home/toby/Jarvis`.
+A local voice and vision assistant for an Ubuntu computer, with wake-word detection,
+local transcription and responses, speaker recognition, a terminal console, music controls,
+and optional camera analysis and Captain's Log recording.
 
-## Architecture
+## Start here
 
-Jarvis has two main pipelines:
+- [Setup and recovery](docs/SETUP.md): environments, dependencies, models, configuration, and service installation.
+- [Architecture](docs/ARCHITECTURE.md): component map and source layout.
+- [Operations](docs/OPERATIONS.md): inspection and maintenance commands.
+- [Repository policy](docs/REPOSITORY.md): source inclusion and private data boundaries.
+- [Readiness report](docs/READINESS.md): preparation checks and verification limits.
+- [Computer awareness](COMPUTER_AWARENESS.md): bounded local inspection capabilities.
 
-1. Voice: PipeWire microphone -> openWakeWord -> continuous one-shot command capture -> `jarvis-listen` -> Whisper.cpp and speaker recognition -> deterministic router -> local Ollama fallback -> Piper speech, with local barge-in cancellation during active commands.
-2. Vision: `jarvis-camera` -> `Footage/` -> `run_sam.sh` -> SAM3 -> timestamped `Masks/runs/` output -> `Masks/latest` -> object monitor and scene-summary tools.
+## Source layout
 
-See `docs/ARCHITECTURE.md` for the tracked component map and `docs/OPERATIONS.md` for safe checks.
+| Location | Purpose |
+| --- | --- |
+| `bin/` | User command launchers. |
+| Root Python modules | Voice, console, controls, recording, and optional vision components. |
+| `systemd/user/` | Service templates and wake overrides. |
+| Root `test_*.py`, `tests/` | Existing regression checks and synthetic test fixtures. |
+| `tools/` | Repository audit and isolated test runner. |
+| `requirements/`, `config/` | Observed dependency versions and example settings. |
+| `patches/` | Preserved third-party SAM3 compatibility changes and upstream notice. |
+| `docs/` | Setup, component map, model inventory, and operations. |
 
-## Repository policy
+Keep the runtime checkout at `$HOME/Jarvis`: several modules assume this location.
+Command shortcuts under `~/.local/bin/` point to the launchers in `bin/`.
 
-This repository tracks behavior, not household data. The `.gitignore` is a privacy-first allowlist. It excludes photographs, masks, voice profiles, conversation history, models, virtual environments, caches, generated state, backup copies, and nested third-party repositories.
+## Private data stays local
 
-When adding a new Jarvis source file, add an explicit allow rule to `.gitignore`, review `git status --short`, and inspect the staged diff before committing.
+Git tracks source and documentation. Captain's Log recordings under `data/`, camera footage
+under `Footage/`, masks under `Masks/`, voice profiles, music, models, credentials, caches,
+and virtual environments stay excluded. Third-party checkouts remain separate.
+The allowlist requires each new source file or category to be explicitly included.
 
-## Safe change workflow
+## Development checks
+
+Install the test dependencies and MPV as described in the setup guide, then run:
 
 ```bash
-git switch -c feature/short-name
-# Edit and test one feature.
-git diff
-git add <specific-files>
-git diff --cached
-git commit -m "Describe the change"
+python tools/check_repository.py --history
+python tools/run_checks.py
 ```
 
-After deployment, restart only the affected service and verify its status and journal. Prefer `git revert <commit>` for a committed rollback.
+These checks use temporary state and silent synthetic media. They do not establish that
+live wake detection, room playback, camera capture, or model inference work on a new machine.
 
-## Local-only identity
+## Change workflow
 
-The initial repository uses the repository-local identity `Jarvis Maintainer <jarvis@localhost>`. It does not change global Git settings and can be replaced later with the maintainer's preferred identity.
+Work on a branch, review `git diff`, stage explicit paths, and inspect `git diff --cached`
+before committing. After a deployed code change, restart only the affected service and
+verify its behavior. Repository templates are not automatically installed.
+Use `git revert` for a committed rollback; keep private recovery backups separately.
+
+No open-source license is selected for first-party code. Start with a private GitHub repository;
+choose a license deliberately before offering the project for public reuse. Third-party
+code and model licenses remain separate. Git identity is repository-local.

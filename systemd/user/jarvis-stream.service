@@ -1,10 +1,13 @@
 [Unit]
+Requires=jarvis-camera-feed.service
+After=jarvis-camera-feed.service
 Description=Jarvis remote camera and audio stream
 After=pipewire.service pipewire-pulse.service wireplumber.service
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/ffmpeg -nostdin -hide_banner -loglevel warning -f v4l2 -i /dev/video0 -f pulse -i alsa_input.usb-046d_Logitech_BRIO_4A78B6D2-03.analog-stereo -c:v libx264 -preset ultrafast -tune zerolatency -c:a aac -f mpegts tcp://0.0.0.0:5000?listen=1
+Environment=JARVIS_STREAM_MIC=default
+ExecStart=/usr/bin/ffmpeg -nostdin -hide_banner -loglevel warning -f mpjpeg -i http://127.0.0.1:8766/stream.mjpg -f pulse -i ${JARVIS_STREAM_MIC} -c:v libx264 -preset ultrafast -tune zerolatency -c:a aac -b:a 128k -f mpegts tcp://0.0.0.0:5000?listen=1
 Restart=always
 RestartSec=2
 

@@ -1,0 +1,154 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+project_dir="${JARVIS_HOME:-$HOME/Jarvis}"
+if [[ "${JARVIS_STATUS_CHILD:-0}" != 1 && -f "$project_dir/jarvis_status.py" ]]; then
+  exec python3 "$project_dir/jarvis_status.py" --run "$(readlink -f -- "${BASH_SOURCE[0]}")" "$@"
+fi
+whisper_cli="$project_dir/whisper.cpp/build/bin/whisper-cli"
+whisper_model="${JARVIS_WHISPER_MODEL:-$project_dir/whisper.cpp/models/ggml-tiny.en.bin}"
+vad_model="${JARVIS_VAD_MODEL:-$project_dir/whisper.cpp/models/ggml-silero-v6.2.0.bin}"
+stt_url="${JARVIS_STT_URL:-http://127.0.0.1:8178/inference}"
+router="$project_dir/jarvis_assistant.py"
+speak="$HOME/.local/bin/jarvis-speak"
+speaker_python="$project_dir/.venv-speaker/bin/python"
+speaker_tool="$project_dir/jarvis_speaker.py"
+audio_device="${JARVIS_MIC_DEVICE:-pipewire}"
+listen_seconds="${JARVIS_LISTEN_SECONDS:-5}"
+# Every command recording is bounded, including caller-provided durations.
+if [[ ! "$listen_seconds" =~ ^[0-9]+$ ]] || (( ${#listen_seconds} > 2 )); then
+  listen_seconds=10
+else
+  listen_seconds=$((10#$listen_seconds))
+  (( listen_seconds >= 1 )) || listen_seconds=1
+  (( listen_seconds <= 10 )) || listen_seconds=10
+fi
+pause_file="${XDG_RUNTIME_DIR:-/run/user/$UID}/jarvis-status/listening-paused"
+if [[ -f "$pause_file" ]]; then
+  printf 'Listening paused. Press P in jarvis-status to resume.\n'
+  exit 0
+fi
+command_audio="${JARVIS_AUDIO_FILE:-}"
+transcript_output="${JARVIS_TRANSCRIPT_FILE:-}"
+runtime_dir="${XDG_RUNTIME_DIR:-/tmp}"
+work_dir=$(mktemp -d "$runtime_dir/jarvis-listen.XXXXXX")
+lock_file="$runtime_dir/jarvis-listen.lock"
+
+meter_pid=""
+stop_meter() {
+  if [[ -n "$meter_pid" ]]; then
+    kill "$meter_pid" 2>/dev/null || true
+    wait "$meter_pid" 2>/dev/null || true
+    meter_pid=""
+  fi
+}
+
+cleanup() {
+  stop_meter
+  rm -rf -- "$work_dir"
+}
+trap cleanup EXIT
+
+exec 9>"$lock_file"
+if ! flock -n 9; then
+  "$speak" "I am already listening."
+  exit 1
+fi
+
+if [[ ! -x "$whisper_cli" || ! -f "$whisper_model" ]]; then
+  "$speak" "My speech recognition system is not ready."
+  exit 1
+fi
+
+if [[ -n "$command_audio" ]]; then
+  if [[ ! -f "$command_audio" ]]; then
+    printf 'Wake-captured audio is missing: %s\n' "$command_audio" >&2
+    exit 66
+  fi
+  printf 'Using wake-captured audio.\n'
+else
+  command_audio="$work_dir/command.wav"
+  if [[ "${JARVIS_MANUAL_TRIGGER:-0}" != 1 ]]; then
+    result=$(( RANDOM % 3 ))
+    if [ $result -eq 0 ]; then
+      "$speak" "At your service, sir."
+    elif [ $result -eq 1 ]; then
+      "$speak" "What's the agenda at hand, sir?"
+    else
+      "$speak" "How may I be of help, sir?"
+    fi
+  fi
+  printf 'Listening for %s seconds...\n' "$listen_seconds"
+
+  python3 "$project_dir/jarvis_mic_meter.py" --watch-wav "$command_audio" --seconds "$listen_seconds" &
+  meter_pid=$!
+  record_status=0
+  python3 "$project_dir/jarvis_listen_control.py" --record -- timeout --foreground --signal=INT --kill-after=1s 10s arecord -q --device "$audio_device" --duration "$listen_seconds" \
+    --format S16_LE --rate 16000 --channels 1 \
+    "$command_audio" || record_status=$?
+  stop_meter
+  if [[ "$record_status" -eq 76 ]]; then
+    printf "Listening paused from console.\n"
+    exit 0
+  fi
+
+  # A timed recording still contains the command collected before the cutoff.
+  if [[ "$record_status" -eq 124 && -s "$command_audio" ]]; then record_status=0; fi
+  if [[ "$record_status" -ne 0 ]]; then
+    "$speak" "I could not record from the microphone."
+    exit "$record_status"
+  fi
+fi
+
+printf 'Transcribing with warm local STT...\n'
+transcript=""
+if command -v curl >/dev/null 2>&1 && transcript=$(
+  curl --silent --show-error --fail --max-time 30 \
+    -F "file=@${command_audio};type=audio/wav" \
+    -F "language=en" \
+    -F "response_format=json" \
+    -F "temperature=0.0" \
+    -F "vad=true" \
+    -F "vad_threshold=0.50" \
+    -F "vad_min_speech_duration_ms=200" \
+    -F "vad_min_silence_duration_ms=350" \
+    -F "vad_speech_pad_ms=120" \
+    "$stt_url" \
+  | python3 -c 'import json, sys; print(json.load(sys.stdin).get("text", "").strip())'
+); then
+  printf 'Warm STT transcription complete.\n'
+else
+  printf 'Warm STT unavailable; using local fallback.\n' >&2
+  "$whisper_cli" \
+    --model "$whisper_model" \
+    --file "$command_audio" \
+    --language en --no-timestamps --no-prints \
+    --vad --vad-model "$vad_model" \
+    --vad-min-speech-duration-ms 200 \
+    --vad-min-silence-duration-ms 350 \
+    --vad-speech-pad-ms 120 \
+    --output-txt --output-file "$work_dir/transcript"
+  transcript=$(tr '\n' ' ' < "$work_dir/transcript.txt" | sed -E 's/^ +| +$//g')
+fi
+
+if [[ -n "$transcript_output" ]]; then
+  printf '%s\n' "$transcript" > "$transcript_output"
+fi
+
+printf 'Transcript: %s\n' "$transcript"
+
+speaker="Unknown"
+speaker_score="0.000"
+speaker_margin="0.000"
+if [[ -x "$speaker_python" && -f "$speaker_tool" ]]; then
+  speaker_result=$("$speaker_python" "$speaker_tool" identify "$command_audio" 2>/dev/null || true)
+  if [[ "$speaker_result" == *"|"* ]]; then
+    IFS='|' read -r speaker speaker_score speaker_margin <<< "$speaker_result"
+  fi
+fi
+
+printf 'Speaker: %s (similarity %s, margin %s)\n' \
+  "$speaker" "$speaker_score" "$speaker_margin"
+JARVIS_SPEAKER="$speaker" JARVIS_SPEAKER_SCORE="$speaker_score" \
+  JARVIS_SPEAKER_MARGIN="$speaker_margin" \
+  python3 "$router" "$transcript"

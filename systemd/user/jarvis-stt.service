@@ -1,0 +1,19 @@
+[Unit]
+Description=Jarvis warm local Whisper transcription service
+
+[Service]
+Type=simple
+WorkingDirectory=%h/Jarvis
+ExecStartPre=/usr/bin/test -x %h/Jarvis/whisper.cpp/build/bin/whisper-server
+ExecStartPre=/usr/bin/test -f %h/Jarvis/whisper.cpp/models/ggml-tiny.en.bin
+ExecStartPre=/usr/bin/test -f %h/Jarvis/whisper.cpp/models/ggml-silero-v6.2.0.bin
+ExecStart=%h/Jarvis/whisper.cpp/build/bin/whisper-server --host 127.0.0.1 --port 8178 --model %h/Jarvis/whisper.cpp/models/ggml-tiny.en.bin --threads 4 --language en --no-timestamps --suppress-nst --vad --vad-model %h/Jarvis/whisper.cpp/models/ggml-silero-v6.2.0.bin --vad-threshold 0.50 --vad-min-speech-duration-ms 200 --vad-min-silence-duration-ms 350 --vad-speech-pad-ms 120 --tmp-dir /tmp --no-gpu
+Restart=on-failure
+RestartSec=3
+Nice=5
+Environment=OMP_NUM_THREADS=4
+PrivateTmp=true
+UMask=0077
+
+[Install]
+WantedBy=default.target

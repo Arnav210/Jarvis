@@ -14,6 +14,8 @@ import urllib.request
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
+from jarvis_status import emit as status_emit
+from jarvis_status import attention as status_attention
 from typing import Any, Callable
 
 
@@ -22,13 +24,17 @@ PROJECT = HOME / "Jarvis"
 MASKS = PROJECT / "Masks"
 CAMERA = HOME / ".local" / "bin" / "jarvis-camera"
 DATA = PROJECT / "data"
-HISTORY = DATA / "conversation_history.json"
+HISTORY = Path(
+    os.environ.get("JARVIS_HISTORY_FILE", str(DATA / "conversation_history.json"))
+)
 OLLAMA_URL = os.environ.get("JARVIS_OLLAMA_URL", "http://127.0.0.1:11434/api/chat")
-MODEL = os.environ.get("JARVIS_AI_MODEL", "qwen3.5:2b")
+MODEL = os.environ.get("JARVIS_AI_MODEL", "qwen3.5:0.8b")
 SPEAKER = os.environ.get("JARVIS_SPEAKER", "Unknown")
 DEBUG = os.environ.get("JARVIS_AI_DEBUG", "0") == "1"
-MAX_HISTORY_MESSAGES = 8
-MAX_TOOL_ROUNDS = 3
+KEEP_ALIVE = os.environ.get("JARVIS_AI_KEEP_ALIVE", "24h")
+NUM_CONTEXT = int(os.environ.get("JARVIS_AI_NUM_CTX", "1024"))
+MAX_PREDICT = int(os.environ.get("JARVIS_AI_MAX_PREDICT", "64"))
+MAX_HISTORY_MESSAGES = 4
 
 
 def debug(message: str) -> None:
@@ -61,9 +67,9 @@ def get_volume() -> str:
 def set_volume(percent: int) -> str:
     """Set the default sink volume, with a conservative voice-command limit."""
     try:
-        volume = max(0, min(int(percent), 200))
+        volume = max(0, min(int(percent), 80))
     except (TypeError, ValueError):
-        return "The volume must be a number between zero and two hundred."
+        return "The volume must be a number between zero and eighty."
 
     result = run(["pactl", "set-sink-volume", "@DEFAULT_SINK@", f"{volume}%"], timeout=5)
     if result.returncode != 0:
@@ -300,6 +306,57 @@ AVAILABLE_TOOLS: dict[str, Callable[..., str]] = {
     "set_mute": set_mute,
 }
 
+TOOL_BY_NAME = {item["function"]["name"]: item for item in TOOLS}
+TOOL_GROUP_NAMES: dict[str, tuple[str, ...]] = {
+    "time": ("get_local_time",),
+    "system": ("get_system_status",),
+    "vision": ("describe_latest_scene", "list_recent_analyses"),
+    "camera": ("take_picture",),
+    "audio": ("get_volume", "set_volume", "change_volume", "set_mute"),
+}
+INTENT_SYSTEM = (
+    "Classify the user's request for a local voice assistant. Reply with exactly "
+    "one label: chat, time, system, computer, vision, camera, or audio. Use camera only "
+    "when the user asks to take a new picture; use vision for existing room "
+    "analysis; use system for Jarvis service health; use computer for filesystem, storage, RAM, CPU, and computer inspection questions."
+)
+FAST_ROUTES: tuple[tuple[str, re.Pattern[str]], ...] = (
+    (
+        "camera",
+        re.compile(
+            r"\b(?:take|capture|snap|shoot)\b.{0,30}\b(?:photo|picture|image|snapshot)\b"
+            r"|\b(?:photo|picture|image|snapshot)\b.{0,30}\b(?:take|capture|snap|shoot)\b",
+            re.IGNORECASE,
+        ),
+    ),
+    ("audio", re.compile(r"\b(?:volume|mute|unmute|louder|quieter)\b", re.IGNORECASE)),
+    (
+        "system",
+        re.compile(
+            r"\b(?:system|service|jarvis|ollama)\b.{0,30}\b(?:status|online|running|working|active|health)\b"
+            r"|\b(?:status|online|running|working|active|health)\b.{0,30}\b(?:system|service|jarvis|ollama)\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "vision",
+        re.compile(
+            r"\b(?:room|scene|object|analysis|analyses)\b.{0,35}\b(?:detect|detected|analysis|analyses|see|saw|found|object)\b"
+            r"|\b(?:detect|detected|analysis|analyses|see|saw|found)\b.{0,35}\b(?:room|scene|object)\b"
+            r"|\b(?:latest analysis|recent analyses|what do you see)\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "time",
+        re.compile(
+            r"\btime is it\b|\bwhat day is it\b|\bwhat(?:'s| is) today's date\b"
+            r"|\b(?:what(?:'s| is) (?:the )?|current |local |tell me the )(?:time|date|day)\b",
+            re.IGNORECASE,
+        ),
+    ),
+)
+
 
 def load_history() -> list[dict[str, str]]:
     try:
@@ -318,10 +375,15 @@ def load_history() -> list[dict[str, str]]:
 
 
 def save_history(messages: list[dict[str, str]]) -> None:
-    DATA.mkdir(parents=True, exist_ok=True)
+    HISTORY.parent.mkdir(parents=True, exist_ok=True)
     payload = messages[-MAX_HISTORY_MESSAGES:]
     with tempfile.NamedTemporaryFile(
-        mode="w", encoding="utf-8", prefix="jarvis-history-", suffix=".json", dir=DATA, delete=False
+        mode="w",
+        encoding="utf-8",
+        prefix="jarvis-history-",
+        suffix=".json",
+        dir=HISTORY.parent,
+        delete=False,
     ) as handle:
         json.dump(payload, handle, indent=2)
         handle.write("\n")
@@ -329,28 +391,76 @@ def save_history(messages: list[dict[str, str]]) -> None:
     temporary.replace(HISTORY)
 
 
-def call_ollama(messages: list[dict[str, Any]]) -> dict[str, Any]:
-    payload = {
+def call_ollama(
+    messages: list[dict[str, Any]],
+    tools: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
         "model": MODEL,
         "messages": messages,
-        "tools": TOOLS,
         "stream": False,
         "think": False,
-        "keep_alive": "10m",
-        "options": {"temperature": 0.2, "num_ctx": 4096, "num_predict": 160},
+        "keep_alive": KEEP_ALIVE,
+        "options": {
+            "temperature": 0.2,
+            "num_ctx": NUM_CONTEXT,
+            "num_predict": MAX_PREDICT,
+        },
     }
+    if tools:
+        payload["tools"] = tools
     request = urllib.request.Request(
         OLLAMA_URL,
         data=json.dumps(payload).encode("utf-8"),
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(request, timeout=150) as response:
-        result = json.loads(response.read().decode("utf-8"))
+    classifying = bool(messages and messages[0].get('content') == INTENT_SYSTEM)
+    reviewing = any(message.get('role') == 'tool' for message in messages)
+    caption = 'Understanding the request' if classifying else 'Reviewing tool results' if reviewing else 'Forming a response'
+    status_emit("processing", caption+'.', model_pending="1", activity_caption=caption, activity_step='understanding' if classifying else 'reviewing' if reviewing else 'responding', activity_target='')
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            result = json.loads(response.read().decode("utf-8"))
+    finally:
+        status_emit(model_pending="0")
     message = result.get("message")
     if not isinstance(message, dict):
         raise RuntimeError("Ollama returned no assistant message")
     return message
+
+
+def fast_route_request(user_text: str) -> str | None:
+    for intent, pattern in FAST_ROUTES:
+        if pattern.search(user_text):
+            return intent
+    return None
+
+
+def classify_request(user_text: str, history: list[dict[str, str]]) -> str:
+    fast_intent = fast_route_request(user_text)
+    if fast_intent:
+        debug(f"fast-routed request to {fast_intent}")
+        return fast_intent
+
+    is_follow_up = bool(
+        re.search(
+            r"\b(?:it|that|those|them|again|now|what about|how about)\b",
+            user_text,
+            re.IGNORECASE,
+        )
+    )
+    context = history[-2:] if is_follow_up else []
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": INTENT_SYSTEM},
+        *context,
+        {"role": "user", "content": user_text},
+    ]
+    content = str(call_ollama(messages).get("content", "")).strip().lower()
+    match = re.search(r"\b(chat|time|system|computer|vision|camera|audio)\b", content)
+    intent = match.group(1) if match else "chat"
+    debug(f"routed request to {intent}")
+    return intent
 
 
 def execute_tool(call: dict[str, Any]) -> tuple[str, str]:
@@ -368,63 +478,147 @@ def execute_tool(call: dict[str, Any]) -> tuple[str, str]:
     tool = AVAILABLE_TOOLS.get(name)
     if tool is None:
         return name or "unknown", "That tool is not approved for Jarvis."
+    from jarvis_activity import tool_activity
+    activity = tool_activity(name, arguments)
+    status_emit("action", activity['activity_caption']+'.', **activity)
     debug(f"calling {name} with {arguments}")
     try:
         return name, tool(**arguments)
     except (OSError, TypeError, ValueError, subprocess.TimeoutExpired) as error:
+        status_attention(f"The {name} action failed: {error}.")
         return name, f"The tool failed safely: {error}."
 
 
 def ask(user_text: str) -> str:
     history = load_history()
+    from jarvis_computer import is_computer_request, ask as ask_computer
+    if is_computer_request(user_text):
+        status_emit("action", "Selected request handler: computer inspection.")
+        answer = ask_computer(user_text, history)
+        save_history([*history, {"role": "user", "content": user_text}, {"role": "assistant", "content": answer}])
+        return answer
+    fast_intent = fast_route_request(user_text)
+    intent = fast_intent or classify_request(user_text, history)
+    status_emit("action", f"Selected request handler: {intent}.")
+    if intent == "computer":
+        answer = ask_computer(user_text, history)
+        save_history([*history, {"role": "user", "content": user_text}, {"role": "assistant", "content": answer}])
+        return answer
+
+    direct_answer = ""
+    if intent == "time":
+        direct_answer = get_local_time()
+    elif intent == "system":
+        direct_answer = get_system_status()
+    elif intent == "vision":
+        if re.search(r"\b(?:recent|history|list|analyses)\b", user_text, re.IGNORECASE):
+            direct_answer = list_recent_analyses()
+        else:
+            direct_answer = describe_latest_scene()
+    elif intent == "camera" and fast_intent == "camera":
+        direct_answer = take_picture()
+    elif intent == "audio" and fast_intent == "audio":
+        lowered = user_text.lower()
+        percent = re.search(r"\b(?:set|make|change)\b.{0,20}\bvolume\b.{0,15}?(\d{1,3})\b", lowered)
+        increase = re.search(r"\b(?:raise|increase|turn up)\b.{0,25}?(\d{1,2})\b", lowered)
+        decrease = re.search(r"\b(?:lower|decrease|turn down)\b.{0,25}?(\d{1,2})\b", lowered)
+        if re.search(r"\bunmute\b", lowered):
+            direct_answer = set_mute(False)
+        elif re.search(r"\bmute\b", lowered):
+            direct_answer = set_mute(True)
+        elif percent:
+            direct_answer = set_volume(int(percent.group(1)))
+        elif increase:
+            direct_answer = change_volume(int(increase.group(1)))
+        elif decrease:
+            direct_answer = change_volume(-int(decrease.group(1)))
+        elif re.search(r"\b(?:what|current|get|check|tell me)\b", lowered):
+            direct_answer = get_volume()
+
+    if direct_answer:
+        debug(f"completed {intent} request directly")
+        save_history(
+            [
+                *history,
+                {"role": "user", "content": user_text},
+                {"role": "assistant", "content": direct_answer},
+            ]
+        )
+        return direct_answer
+
+    selected_names = set(TOOL_GROUP_NAMES.get(intent, ()))
+    selected_tools = [TOOL_BY_NAME[name] for name in selected_names]
     speaker_context = SPEAKER if SPEAKER != "Unknown" else "an unidentified speaker"
     system = (
-        "You are Jarvis, a concise household voice and vision assistant running locally on Ubuntu. "
-        "Your response will be spoken aloud, so use plain text, no Markdown, no lists unless necessary, "
-        "and normally one to three short sentences. Be calm, capable, and lightly witty without impersonating "
-        "a real person. Use the provided tools when current system, camera, or vision data is required. "
-        "Use the recent conversation to understand short follow-up answers and references. When a request is "
-        "ambiguous or is missing information needed to act safely, ask exactly one short, specific clarifying "
-        "question instead of guessing or calling a tool. "
-        "Never claim an action succeeded unless its tool result confirms success. You have no shell access and "
-        "must not invent tools. You do not directly watch or analyze the live video stream. The stream is a "
-        "separate remote-viewing service, while SAM3 analyzes individual saved photographs. Only describe current "
-        "vision results after using a vision tool. Your language model interprets requests and selects approved "
-        "tools; it does not replace Whisper, SAM3, or the safety checks. The current speaker is "
-        + speaker_context
-        + "."
+        "You are Jarvis, a concise local voice assistant. Answer the request "
+        "directly in plain text for speech, normally one or two short sentences. "
+        "Do not ask a follow-up unless an action cannot safely proceed. Use an available tool "
+        "when current device, camera, vision, time, or service data is required. "
+        "Ask one short question if action details are unsafe or unclear. Never "
+        "claim an action succeeded unless a tool confirms it, and never invent "
+        f"tools. The current speaker is {speaker_context}."
     )
     messages: list[dict[str, Any]] = [{"role": "system", "content": system}, *history]
     messages.append({"role": "user", "content": user_text})
 
-    answer = ""
-    for _ in range(MAX_TOOL_ROUNDS):
-        assistant = call_ollama(messages)
-        messages.append(assistant)
-        calls = assistant.get("tool_calls") or []
-        if not calls:
-            answer = str(assistant.get("content", "")).strip()
-            break
-        for call in calls:
-            if not isinstance(call, dict):
-                continue
-            name, result = execute_tool(call)
-            messages.append({"role": "tool", "tool_name": name, "content": result})
+    assistant = call_ollama(messages, selected_tools)
+    messages.append(assistant)
+    calls = assistant.get("tool_calls") or []
+    tool_results: list[str] = []
+    for call in calls:
+        if not isinstance(call, dict):
+            continue
+        name = str(call.get("function", {}).get("name", ""))
+        if name not in selected_names:
+            debug(f"rejected out-of-route tool {name or 'unknown'}")
+            messages.append(
+                {
+                    "role": "tool",
+                    "tool_name": name or "unknown",
+                    "content": "That tool is not available for this request.",
+                }
+            )
+            continue
+        tool_name, result = execute_tool(call)
+        messages.append({"role": "tool", "tool_name": tool_name, "content": result})
+        tool_results.append(result)
+
+    if tool_results:
+        answer = " ".join(tool_results)
+    elif calls:
+        answer = "I could not complete that request safely."
+    else:
+        answer = str(assistant.get("content", "")).strip()
 
     if not answer:
         answer = "I could not complete that request safely."
-    save_history([*history, {"role": "user", "content": user_text}, {"role": "assistant", "content": answer}])
+    save_history(
+        [
+            *history,
+            {"role": "user", "content": user_text},
+            {"role": "assistant", "content": answer},
+        ]
+    )
     return answer
 
 
 def main() -> int:
     if len(sys.argv) < 2:
-        print("Usage: jarvis-ai <request>", file=sys.stderr)
+        print("Usage: jarvis-ai <request> | jarvis-ai --warm", file=sys.stderr)
         return 2
     try:
+        if sys.argv[1:] == ["--warm"]:
+            call_ollama(
+                [
+                    {"role": "system", "content": "Reply with exactly ready."},
+                    {"role": "user", "content": "Ready?"},
+                ]
+            )
+            return 0
         print(ask(" ".join(sys.argv[1:])))
         return 0
     except (urllib.error.URLError, TimeoutError, ValueError, RuntimeError) as error:
+        status_attention("Local intelligence is unavailable.")
         print(f"Jarvis AI unavailable: {error}", file=sys.stderr)
         return 1
 

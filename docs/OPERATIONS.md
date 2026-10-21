@@ -17,11 +17,17 @@ du -sh Footage Masks
 
 ## Source validation
 
+With test dependencies installed in a development environment:
+
 ```bash
-bash -n jarvis-ai jarvis-camera jarvis-enroll jarvis-identify jarvis-listen jarvis-speak run_sam.sh
-python3 -m py_compile jarvis_ai.py jarvis_assistant.py jarvis_speaker.py jarvis_wake.py sam3_process.py object_monitor/object_monitor/object_monitor.py
+python tools/check_repository.py --history
+python tools/run_checks.py
 systemd-analyze --user verify systemd/user/*.service
 ```
+
+The audit does not import optional vision modules. Some load models at import time.
+The regression runner isolates state and uses synthetic media with silent output.
+Service validation checks templates only and does not install or start them.
 
 ## Before a commit
 
@@ -33,3 +39,7 @@ git diff --cached
 ```
 
 Do not trigger audio playback, alarms, volume changes, camera capture, enrollment, or destructive cleanup as part of routine health verification.
+
+## Command console
+
+`jarvis-status --open` opens the desktop view without recording or playback. `jarvis-status` views it in the current terminal; press Q to close the view. Check `$XDG_RUNTIME_DIR/jarvis-status/window.log` if a desktop window fails to open. The console uses the existing desktop session and opens no network port.

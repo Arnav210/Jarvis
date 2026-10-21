@@ -11,10 +11,14 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import wave
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
+from jarvis_music import MusicError, parse_voice as parse_local_music, perform as perform_local_music
+from jarvis_status import emit as status_emit
+from jarvis_status import attention as status_attention
 
 
 HOME = Path.home()
@@ -22,8 +26,13 @@ PROJECT = HOME / "Jarvis"
 SPEAK = HOME / ".local" / "bin" / "jarvis-speak"
 CAMERA = HOME / ".local" / "bin" / "jarvis-camera"
 AI = PROJECT / "jarvis_ai.py"
+SPOTIFY = PROJECT / "jarvis_spotify.py"
 MASKS = PROJECT / "Masks"
 SPEAKER = os.environ.get("JARVIS_SPEAKER", "Unknown")
+
+STATE_DIR = Path(os.environ.get("XDG_STATE_HOME", HOME / ".local" / "state")) / "jarvis"
+STATE_FILE = STATE_DIR / "assistant.json"
+DEFAULT_STATE = {"paused": False, "last_message": "", "audio_mode": "normal"}
 
 CANCEL_PATTERN = re.compile(
     r"\b(?:jarvis\s+(?:please\s+)?(?:stop|cancel|be\s+quiet|quiet|shut\s+up)"
@@ -54,33 +63,156 @@ def run(command: list[str], *, timeout: int = 30) -> subprocess.CompletedProcess
     return subprocess.run(command, text=True, capture_output=True, timeout=timeout)
 
 
-def speak(message: str) -> None:
-    print(f"Jarvis: {message}")
+def load_state() -> dict[str, object]:
+    state = DEFAULT_STATE.copy()
+    try:
+        saved = json.loads(STATE_FILE.read_text(encoding="utf-8"))
+        if isinstance(saved, dict):
+            state.update(saved)
+    except (FileNotFoundError, OSError, ValueError, TypeError):
+        pass
+    return state
+
+
+def update_state(**updates: object) -> dict[str, object]:
+    state = load_state()
+    state.update(updates)
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    temporary = STATE_FILE.with_suffix(".tmp")
+    temporary.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
+    temporary.replace(STATE_FILE)
+    return state
+
+
+def remember_message(message: str) -> None:
+    try:
+        update_state(last_message=message)
+    except OSError as error:
+        print(f"State error: {error}", file=sys.stderr)
+
+
+def speak(message: str, *, remember: bool = True) -> None:
+    status_emit("speaking", "Playing the response through the room speaker.", reply=message)
+    print(f"Jarvis: {message}", flush=True)
+    if remember:
+        remember_message(message)
     try:
         result = run([str(SPEAK), message], timeout=120)
         if result.returncode:
+            status_attention("Speaker playback failed. Check the speaker connection.")
             print(result.stderr.strip(), file=sys.stderr)
     except (OSError, subprocess.TimeoutExpired) as error:
+        status_attention("Speaker playback failed or timed out.")
         print(f"Speech error: {error}", file=sys.stderr)
+
+
+def set_paused(paused: bool) -> None:
+    status_emit("action", 'Updating the pause state.')
+    try:
+        update_state(paused=paused)
+    except OSError as error:
+        print(f"State error: {error}", file=sys.stderr)
+        speak("I could not change my listening state.", remember=False)
+        return
+    if paused:
+        speak("Jarvis paused. Say Hey Jarvis, then resume Jarvis when you need me.", remember=False)
+    else:
+        speak("Jarvis resumed and ready.", remember=False)
+
+
+def repeat_last_message() -> None:
+    status_emit("action", 'Retrieving the previous response.')
+    message = str(load_state().get("last_message", "")).strip()
+    if message:
+        speak(message, remember=False)
+    else:
+        speak("I do not have a previous message to repeat yet.", remember=False)
+
+
+def set_audio_mode(mode: str) -> None:
+    status_emit("action", 'Changing the audio mode.')
+    if mode == "class":
+        speak("Entering class mode. Muting the speakers now.", remember=False)
+        result = run(["wpctl", "set-mute", "@DEFAULT_AUDIO_SINK@", "1"])
+        if result.returncode:
+            print(result.stderr.strip() or "Could not mute the default audio sink.", file=sys.stderr)
+            speak("I could not mute the speakers.", remember=False)
+            return
+    elif mode == "normal":
+        unmute = run(["wpctl", "set-mute", "@DEFAULT_AUDIO_SINK@", "0"])
+        volume = run(["wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", "20%"])
+        if unmute.returncode or volume.returncode:
+            details = unmute.stderr.strip() or volume.stderr.strip()
+            print(details or "Could not restore the default audio sink.", file=sys.stderr)
+            speak("I could not fully restore normal audio.", remember=False)
+            return
+        speak("Normal mode restored. Speaker volume is twenty percent.", remember=False)
+    else:
+        raise ValueError(f"Unknown audio mode: {mode}")
+
+    try:
+        update_state(audio_mode=mode)
+    except OSError as error:
+        print(f"State error: {error}", file=sys.stderr)
+
+
+def local_music_command(action: str, query: str = '') -> None:
+    status_emit('action', 'Controlling the local music library.')
+    try:
+        message = perform_local_music(action, query)
+    except MusicError as error:
+        message = str(error)
+        status_attention(message)
+    speak(message)
+
+
+def spotify_command(command: str, *arguments: str) -> None:
+    status_emit("action", 'Sending the request to Spotify.')
+    if not SPOTIFY.is_file():
+        status_attention("Spotify controls are not installed.")
+        speak("My Spotify controls are not installed yet.")
+        return
+    try:
+        result = run([sys.executable, str(SPOTIFY), command, *arguments], timeout=40)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        status_attention("Spotify did not respond. Check its service and network connection.")
+        print(f"Spotify error: {error}", file=sys.stderr)
+        speak("Spotify did not respond in time.")
+        return
+    output = result.stdout.strip() if result.returncode == 0 else result.stderr.strip()
+    message = output.splitlines()[-1] if output else "Spotify could not complete that command."
+    if result.returncode:
+        status_attention("Spotify unavailable: " + message)
+        print(message, file=sys.stderr)
+    speak(message)
 
 
 def ask_ai(transcript: str) -> str | None:
     """Ask the local allowlisted AI agent, returning None for safe fallback."""
+    status_emit("processing", "Checking the request with local intelligence.")
     if os.environ.get("JARVIS_AI_ENABLED", "1") == "0" or not AI.is_file():
+        status_attention("Local intelligence is disabled or not installed.")
         return None
     try:
         result = run([sys.executable, str(AI), transcript], timeout=170)
     except (OSError, subprocess.TimeoutExpired) as error:
+        status_attention("Local intelligence failed or timed out. Say Hey Jarvis to try again.")
         print(f"AI error: {error}", file=sys.stderr)
         return None
     if result.returncode != 0:
+        status_attention("Local intelligence is unavailable.")
         print(result.stderr.strip() or "Jarvis AI returned an error.", file=sys.stderr)
         return None
     response = result.stdout.strip()
+    if not response:
+        status_attention("Local intelligence returned no response.")
+    elif response.endswith('?') and re.match(r"^(?:which\b|what (?:specific|would you like|is your (?:current goal|intended))|(?:could|can) you (?:clarify|specify|provide)|please (?:clarify|specify))", response, re.IGNORECASE):
+        status_attention("Clarification requested. Say Hey Jarvis again to answer.")
     return response or None
 
 
 def take_picture() -> None:
+    status_emit("action", 'Requesting a camera capture.')
     speak("Taking a picture now.")
     try:
         result = run([str(CAMERA)], timeout=20)
@@ -100,6 +232,7 @@ def take_picture() -> None:
 
 def sound_alarm() -> None:
     """Play a short alternating alarm through the current PipeWire output."""
+    status_emit("action", 'Playing the alarm.')
     speak("Warning. Alarm activated.")
     sample_rate = 44100
     duration_seconds = 4
@@ -137,6 +270,7 @@ def sound_alarm() -> None:
 
 
 def system_status() -> None:
+    status_emit("action", 'Checking system services.')
     vision = run(["systemctl", "--user", "is-active", "jarvis-sam3.service"])
     vision_ok = vision.stdout.strip() == "active"
 
@@ -154,6 +288,7 @@ def system_status() -> None:
 
 
 def scene_summary() -> None:
+    status_emit("action", 'Reading the latest scene analysis.')
     latest = MASKS / "latest"
     run_folder = latest.resolve() if latest.exists() else MASKS
     combined = run_folder / "combined_overlay.png"
@@ -200,13 +335,94 @@ def scene_summary() -> None:
     speak(f"In the latest analyzed image, I found {description}. That result was completed at {analyzed_at}.")
 
 
+def captains_log_command(command: str) -> None:
+    """Explicit log commands bypass AI and its generic music-play handler."""
+    status_emit("action", 'Processing the captain log command.')
+    if command == "start":
+        # Speak first so the opening cue is not included in the recording.
+        speak("Captain's log. Recording will begin after this message.")
+    try:
+        result = run([sys.executable, str(PROJECT / "jarvis_log.py"), command], timeout=1900 if command == "play" else 120 if command == "stop" else 30)
+        message = (result.stdout if result.returncode == 0 else result.stderr).strip()
+        if command == "start" and result.returncode == 0:
+            print(message)
+        else:
+            speak(message or "Captain's log command complete.")
+    except (OSError, subprocess.TimeoutExpired) as error:
+        print(f"Captain's log error: {error}", file=sys.stderr)
+        speak("I could not complete that log command.")
+
+
 def route(transcript: str) -> None:
     text = re.sub(r"[^a-z0-9' ]+", " ", transcript.lower())
     text = re.sub(r"\s+", " ", text).strip()
-    print(f"Heard: {transcript.strip()}")
+    status_emit("routing", "Matching the transcript to an available command.", transcript=transcript.strip())
+    print(f"Heard: {transcript.strip()}", flush=True)
+
+    state = load_state()
+    resume_requested = bool(
+        re.fullmatch(r"(?:hey )?(?:please )?(?:resume jarvis|jarvis resume|wake up jarvis|unpause jarvis)(?: please)?", text)
+    )
+    pause_requested = bool(
+        re.fullmatch(r"(?:hey )?(?:please )?(?:pause jarvis|jarvis pause|go to sleep jarvis|stop responding)(?: please)?", text)
+    )
 
     if not text or text in {"blank audio", "silence"}:
+        status_attention("No clear command heard. Say Hey Jarvis and try again.")
         speak("I did not hear a command. Please try again.")
+    elif resume_requested:
+        set_paused(False)
+    elif pause_requested:
+        set_paused(True)
+    elif re.fullmatch(r"(?:hey )?(?:jarvis )?(?:end|stop|finish) (?:the )?(?:(?:captain'?s|captain s|personal) )?log", text):
+        captains_log_command("stop")
+    elif bool(state.get("paused", False)):
+        print("Jarvis is paused; command ignored. Say 'resume Jarvis' after the wake word.")
+    elif re.fullmatch(r"(?:hey )?(?:jarvis )?daddy(?:'?s| s| is) home", text):
+        status_emit(welcome_glow_started=str(time.time()))
+        speak("Welcome home, sir. I see subtle entrances are still beneath you.")
+    elif re.fullmatch(r"(?:hey )?(?:jarvis )?(?:begin|start) (?:a |the )?(?:(?:captain'?s|captain s|personal) )?log", text):
+        captains_log_command("start")
+    elif re.fullmatch(r"(?:hey )?(?:jarvis )?(?:captain'?s log status|log status)", text):
+        captains_log_command("status")
+    elif re.fullmatch(r"(?:hey )?(?:jarvis )?play (?:the )?(?:latest|last) (?:(?:captain'?s|captain s|personal) )?log", text):
+        captains_log_command("play")
+    elif re.search(r"\b(?:repeat that|repeat your last (?:message|response)|say that again|what did you say)\b", text):
+        repeat_last_message()
+    elif re.search(r"\b(?:enter |activate |enable )?class mode\b", text):
+        set_audio_mode("class")
+    elif re.search(r"\b(?:enter |activate |enable )?normal mode\b|\b(?:exit|leave|disable) class mode\b", text):
+        set_audio_mode("normal")
+    elif re.fullmatch(r"(?:hey )?(?:jarvis )?(?:(?:can|could|would) you )?(?:please )?(?:open|display|show(?: me)?) (?:the )?(?:latest|last|most recent) (?:masked|segmented|analyzed|annotated) (?:image|photo|picture)(?: for me)?(?: please)?", text):
+        from jarvis_image_view import open_latest_image
+        status_emit("action", "Opening the latest completed masked image.")
+        speak(open_latest_image(masked=True))
+    elif re.fullmatch(r"(?:hey )?(?:jarvis )?(?:(?:can|could|would) you )?(?:please )?(?:open|display|show(?: me)?) (?:the )?(?:latest|last|most recent) (?:(?:saved|camera) )?(?:image|photo|picture)(?: for me)?(?: please)?", text):
+        from jarvis_image_view import open_latest_image
+        status_emit("action", "Opening the latest saved camera image.")
+        speak(open_latest_image())
+    elif re.fullmatch(r"(?:hey )?(?:jarvis )?(?:(?:can|could|would) you )?(?:please )?(?:play|start|run|activate|show(?: me)?) (?:(?:a|the) )?(?:halloween|spooky)(?: (?:show|animation|mode))?(?: please)?", text):
+        from jarvis_halloween import run_show
+        if run_show():
+            speak("Happy Halloween, sir.")
+    elif (music_request := parse_local_music(text)) is not None:
+        local_music_command(*music_request)
+    elif re.search(r"\b(?:what(?:'s| is) playing|what song is (?:this|playing)|now playing)\b", text):
+        spotify_command("now-playing")
+    elif re.search(r"\b(?:pause|stop) (?:the )?(?:music|song|spotify)\b", text):
+        spotify_command("pause")
+    elif re.search(r"\b(?:resume|continue|play) (?:the )?(?:music|spotify)\b", text):
+        spotify_command("resume")
+    elif re.search(r"\b(?:next|skip)(?: song| track)?\b", text):
+        spotify_command("next")
+    elif re.search(r"\b(?:previous|last|go back)(?: song| track)?\b", text):
+        spotify_command("previous")
+    elif match := re.search(r"\bplay (?:the song |song |track )?(.+?)(?: on spotify)?$", text):
+        query = match.group(1).strip()
+        if query:
+            spotify_command("play", query)
+        else:
+            speak("Tell me which song or artist to play.")
     elif CANCEL_PATTERN.search(text):
         print("Cancellation acknowledged.")
     elif END_SESSION_PATTERN.search(text):
@@ -248,7 +464,7 @@ def route(transcript: str) -> None:
     elif re.search(r"\b(good evening)\b", text):
         speak("Good evening. All systems are standing by.")
     elif re.search(r"\b(what can you do|help|commands)\b", text):
-        speak("I can understand natural requests using my local AI, answer questions, use the camera, describe recent detections, report system status, remember short conversations, run my approved tools, and stop when you interrupt me.")
+        speak("I can answer questions, inspect folder sizes and free disk space, find files, check memory and CPU load, report service status, use the camera, open the latest saved or masked image, play a Halloween ASCII show, control local music, repeat my last message, and switch audio modes.")
     elif re.search(r"\b(hello|hi|good morning|good afternoon|good evening)\b", text):
         greeting = f"Hello, {SPEAKER}." if SPEAKER != "Unknown" else "Hello."
         speak(f"{greeting} Jarvis is online and ready.")

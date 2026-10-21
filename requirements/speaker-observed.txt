@@ -1,0 +1,5 @@
+# Observed installation snapshot; Python 3.12.3.
+# Local/editable projects are provisioned separately.
+numpy==2.5.3
+sherpa-onnx-core==1.13.8
+sherpa_onnx==1.13.8

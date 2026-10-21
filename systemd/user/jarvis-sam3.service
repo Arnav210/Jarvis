@@ -1,12 +1,12 @@
-# This is a transient unit file, created programmatically via the systemd API. Do not edit.
 [Unit]
-Description=/home/toby/Jarvis/run_sam.sh
+Description=Jarvis SAM3 image watcher
 
 [Service]
-WorkingDirectory=/home/toby/Jarvis
+Type=simple
+WorkingDirectory=%h/Jarvis
+ExecStart=%h/Jarvis/bin/run_sam.sh
 Restart=on-failure
-ExecStart=
-ExecStart="/home/toby/Jarvis/run_sam.sh"
+RestartSec=5
 
 [Install]
 WantedBy=default.target

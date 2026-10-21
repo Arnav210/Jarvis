@@ -1,0 +1,24 @@
+name: Source checks
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes mpv
+          python -m pip install -r requirements/test.txt
+      - name: Check source and history
+        run: python tools/check_repository.py --history
+      - name: Run isolated regression checks
+        run: python tools/run_checks.py

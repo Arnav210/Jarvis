@@ -5,6 +5,9 @@ from __future__ import annotations
 
 import os
 import re
+import select
+from jarvis_listen_control import listening_paused, begin_capture, finish_requested, end_capture
+from jarvis_reset import generation
 import signal
 import subprocess
 import sys
@@ -13,6 +16,11 @@ import time
 import wave
 from collections import deque
 from pathlib import Path
+from jarvis_status import emit as status_emit, runtime as status_runtime, open_window as open_status_window, attention as status_attention
+
+from jarvis_music_duck import ducked as duck_music, recover as recover_music_volume
+from jarvis_mic_meter import MicMeter
+from jarvis_manual_listen import manual_active
 
 import numpy as np
 import openwakeword
@@ -38,7 +46,7 @@ FOLLOW_UP_WAIT_SECONDS = float(os.environ.get("JARVIS_FOLLOW_UP_WAIT_SECONDS", "
 CONVERSATION_MAX_TURNS = max(1, int(os.environ.get("JARVIS_CONVERSATION_MAX_TURNS", "4")))
 END_SESSION_PATTERN = re.compile(
     r"\b(?:that's all|that is all|goodbye|bye jarvis|end (?:the )?conversation|"
-    r"stop listening|no thanks|nothing else)\b"
+    r"stop listening|no thanks|nothing else|pause jarvis|jarvis pause|go to sleep jarvis)\b"
 )
 
 running = True
@@ -91,10 +99,19 @@ def start_recorder() -> subprocess.Popen[bytes]:
     )
 
 
-def read_frame(stream: object) -> bytes:
+def read_frame(stream: object, deadline: float | None = None, reset_token: str | None = None, finish_token: str | None = None) -> bytes:
     data = bytearray()
     while running and len(data) < FRAME_BYTES:
-        chunk = stream.read(FRAME_BYTES - len(data))
+        if listening_paused() or (reset_token is not None and generation() != reset_token):
+            break
+        if finish_token is not None and finish_requested(finish_token):
+            break
+        remaining = .1 if deadline is None else min(.1, deadline - time.monotonic())
+        if remaining <= 0:
+            break
+        if not select.select([stream], [], [], remaining)[0]:
+            continue
+        chunk = os.read(stream.fileno(), FRAME_BYTES - len(data))
         if not chunk:
             break
         data.extend(chunk)
@@ -119,20 +136,25 @@ def capture_command(
     audio_path = Path(audio_name)
 
     frames = list(pre_roll)
+    reset_token = generation()
     new_frame_count = 0
     speech_frame_count = 0
     speech_seen = False
     silent_frame_count = 0
-    capture_window = COMMAND_MAX_SECONDS + (start_timeout if require_speech else 0)
+    deadline = time.monotonic() + 10.0
+    capture_window = min(10.0, COMMAND_MAX_SECONDS + (start_timeout if require_speech else 0))
     max_frames = max(1, int(capture_window * 16000 / FRAME_SAMPLES))
     command_max_frames = max(1, int(COMMAND_MAX_SECONDS * 16000 / FRAME_SAMPLES))
     minimum_frames = max(1, int(COMMAND_MIN_SECONDS * 16000 / FRAME_SAMPLES))
     start_timeout_frames = max(1, int(start_timeout * 16000 / FRAME_SAMPLES))
     silence_frames_needed = max(1, int(COMMAND_SILENCE_SECONDS * 16000 / FRAME_SAMPLES))
 
+    meter = MicMeter(threshold=COMMAND_RMS_THRESHOLD)
+    meter.start()
+    capture_token = begin_capture()
     try:
         while running and new_frame_count < max_frames:
-            raw = read_frame(stream)
+            raw = read_frame(stream, deadline=deadline, reset_token=reset_token, finish_token=capture_token)
             if len(raw) != FRAME_BYTES:
                 break
             frames.append(raw)
@@ -140,6 +162,7 @@ def capture_command(
 
             frame = np.frombuffer(raw, dtype=np.int16)
             rms = float(np.sqrt(np.mean(frame.astype(np.float64) ** 2)))
+            meter.feed(raw)
             if rms >= COMMAND_RMS_THRESHOLD:
                 speech_seen = True
                 silent_frame_count = 0
@@ -157,6 +180,11 @@ def capture_command(
                 if not speech_seen and new_frame_count >= start_timeout_frames:
                     break
 
+        if listening_paused() or generation() != reset_token:
+            audio_path.unlink(missing_ok=True)
+            log('Command recording paused from console')
+            return None
+
         if require_speech and not speech_seen:
             audio_path.unlink(missing_ok=True)
             log("No follow-up heard; conversation session ended")
@@ -170,6 +198,9 @@ def capture_command(
     except Exception:
         audio_path.unlink(missing_ok=True)
         raise
+    finally:
+        end_capture(capture_token)
+        meter.stop()
 
     duration = len(frames) * FRAME_SAMPLES / 16000
     log(f"Captured {label} ({duration:.2f}s)")
@@ -297,12 +328,14 @@ def run_command_cycle(audio_path: Path) -> tuple[str, str]:
                 barge_in = None
 
             if time.monotonic() >= deadline:
+                status_attention("Command timed out. Say Hey Jarvis to try again.")
                 stop_process_group(command)
                 outcome = "timeout"
                 log("Command cycle timed out")
                 break
             time.sleep(0.1)
     except OSError as error:
+        status_attention("Could not start the command listener.")
         log(f"Could not launch jarvis-listen: {error}")
     finally:
         stop_process(barge_in)
@@ -346,11 +379,20 @@ def main() -> int:
         log(f"Missing command: {LISTEN_COMMAND}")
         return 1
 
+    recover_music_volume()
     model = load_model()
+    try:
+        os.environ['JARVIS_STATUS_FILE'] = str(status_runtime() / 'state.json')
+        status_emit('standby', 'Wake listener ready. Say Hey Jarvis for one command.', result='idle')
+    except OSError:
+        pass
     log(f"Wake listener ready on {MIC_DEVICE}; threshold={THRESHOLD:.2f}")
     pre_roll_frame_count = max(1, int(COMMAND_PRE_ROLL_SECONDS * 16000 / FRAME_SAMPLES))
 
     while running:
+        if listening_paused():
+            time.sleep(.1)
+            continue
         recent_audio: deque[bytes] = deque(maxlen=pre_roll_frame_count)
         recorder = start_recorder()
         if recorder.stdout is None:
@@ -367,13 +409,21 @@ def main() -> int:
             frame = np.frombuffer(raw, dtype=np.int16)
             predictions = model.predict(frame)
             score = max((float(value) for value in predictions.values()), default=0.0)
-            if score >= THRESHOLD:
+            if score >= THRESHOLD and not manual_active():
                 log(f"Hey Jarvis detected (confidence {score:.2f})")
-                audio_path = capture_command(recorder.stdout, tuple(recent_audio))
-                if not running:
-                    audio_path.unlink(missing_ok=True)
-                    break
-                run_conversation(model, audio_path)
+                with duck_music():
+                    status_emit('listening', 'Wake phrase detected. Listening for one command.', result='running', started=str(time.time()), transcript='', reply='', speaker='Pending', attention='')
+                    try:
+                        open_status_window()
+                    except OSError:
+                        pass
+                    audio_path = capture_command(recorder.stdout, tuple(recent_audio))
+                    if audio_path is None:
+                        break
+                    if not running:
+                        audio_path.unlink(missing_ok=True)
+                        break
+                    run_conversation(model, audio_path)
                 break
 
         stop_recorder()

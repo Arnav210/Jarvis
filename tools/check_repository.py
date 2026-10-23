@@ -30,9 +30,19 @@ def git(*args):
     return subprocess.check_output(['git', '-C', str(ROOT), *args])
 
 
+WEB_SOURCE_PATHS = {
+    'Jarvis-Web/backend/server.py',
+    'Jarvis-Web/frontend/app.js',
+    'Jarvis-Web/frontend/index.html',
+    'Jarvis-Web/frontend/style.css',
+    'Jarvis-Web/tests/test_history.py',
+    'Jarvis-Web/tests/test_masks.py',
+}
+
+
 def private_path(name):
     parts = pathlib.PurePosixPath(name).parts
-    return (not parts or parts[0] in PRIVATE_ROOTS
+    return (not parts or (parts[0] in PRIVATE_ROOTS and name not in WEB_SOURCE_PATHS)
             or any(x.startswith('.venv') or x == '__pycache__' or x.startswith('.env') for x in parts)
             or pathlib.PurePosixPath(name).suffix.lower() in PRIVATE_SUFFIXES
             or any(x in name for x in ['.before-', '.before_', '.backup-', '.bak-'])
@@ -90,7 +100,9 @@ def main():
                 errors.add(f'{name}: invalid shell syntax')
     probes = ['data/captains-log/example.mp4', 'Footage/example.jpg', 'Masks/runs/example/manifest.json',
               'VoiceProfiles/example/profile.json', 'models/example.onnx', 'voices/example.onnx',
-              '.venv-wake/example.py', 'docs/.env', 'systemd/user/example.key', 'tests/__pycache__/example.pyc']
+              '.venv-wake/example.py', 'docs/.env', 'systemd/user/example.key', 'tests/__pycache__/example.pyc', 'Jarvis-Web/backups/example/server.py',
+              'Jarvis-Web/tools/cloudflared', 'Jarvis-Web/frontend/.env',
+              'Jarvis-Web/frontend/style.css.backup', 'Jarvis-Web/backend/__pycache__/server.pyc']
     for name in probes:
         r = subprocess.run(['git', '-C', str(ROOT), 'check-ignore', '--quiet', '--no-index', name])
         if r.returncode != 0:

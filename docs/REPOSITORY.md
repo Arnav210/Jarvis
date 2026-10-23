@@ -3,7 +3,8 @@
 ## Tracked source
 
 First-party Python code lives in `src/jarvis/`, grouped by function. Terminal commands
-are in `bin/`. All tests are in `tests/`, with one runner under `tools/`.
+are in `bin/`. Core tests are in `tests/`, with one runner under `tools/`.
+Website-specific tests live under `Jarvis-Web/tests/`.
 Documentation, service templates, example settings, dependency snapshots, and
 the SAM3 compatibility patch are included explicitly in `.gitignore`.
 Third-party source and model weights are provisioned separately; see `SETUP.md`.
@@ -13,8 +14,13 @@ Third-party source and model weights are provisioned separately; see `SETUP.md`.
 Never include `data/` (including all Captain's Log recordings and music), `Footage/`,
 `Masks/`, `VoiceProfiles/`, `models/`, `voices/`, virtual environments, caches, credentials,
 or runtime state. Keep a separate private backup of irreplaceable recordings and profiles.
-`sam3/`, `whisper.cpp/`, `Depth-Anything-3/`, and `Jarvis-Web/` are excluded. The web project
-is not included implicitly; it needs its own explicit scope and review.
+`sam3/`, `whisper.cpp/`, and `Depth-Anything-3/` are excluded.
+For `Jarvis-Web/`, only `frontend/index.html`, `frontend/app.js`,
+`frontend/style.css`, `backend/server.py`, `tests/test_history.py`, and
+`tests/test_masks.py` are explicitly included. All other website files remain
+excluded, including backups, tools, credentials, logs, and generated data.
+The website reads private captures and masks at runtime; those assets are never
+part of the source repository.
 Old editor backups and the stray diagnostic text file are preserved under ignored `archive/`.
 
 Ignore rules do not remove already committed data. Run `tools/check_repository.py --history`

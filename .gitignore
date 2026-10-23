@@ -153,3 +153,16 @@ __pycache__/
 
 # Standalone ASCII film command.
 !/bin/jarvis-ironman
+
+# Jarvis website: reviewed source only; all other web files remain private.
+!/Jarvis-Web/
+/Jarvis-Web/**
+!/Jarvis-Web/frontend/
+!/Jarvis-Web/backend/
+!/Jarvis-Web/tests/
+!/Jarvis-Web/frontend/index.html
+!/Jarvis-Web/frontend/app.js
+!/Jarvis-Web/frontend/style.css
+!/Jarvis-Web/backend/server.py
+!/Jarvis-Web/tests/test_history.py
+!/Jarvis-Web/tests/test_masks.py

@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0a1014"><title>Jarvis · Vision</title><link rel="stylesheet" href="/static/style.css"></head>
+<body>
+<header class="topbar"><a class="brand" href="/" aria-label="Jarvis home"><span class="brand-mark">J<span>.</span></span><span>JARVIS<small>ROOM INTELLIGENCE</small></span></a><div class="connection"><span id="status-dot" class="dot"></span><span id="status-badge" role="status">Connecting</span></div></header>
+<main>
+<section class="page-heading"><div><p class="eyebrow">VISION / OBSERVATION ARCHIVE</p><h1>A closer look.</h1><p class="intro">Your room, captured in detail. Explore a frame or reveal what Jarvis sees.</p></div><div class="capture-total"><strong id="capture-count">—</strong><span>recent captures</span></div></section>
+<section class="workspace" aria-label="Capture explorer">
+<div class="viewer-panel"><div class="panel-top"><div><span class="section-number">01</span><h2>Frame explorer</h2></div><div class="view-switch" role="group" aria-label="Image view"><button id="original-btn" aria-pressed="true">Original</button><button id="overlay-btn" aria-pressed="false">Detection overlay</button></div></div>
+<div class="image-wrapper"><img id="featured-image" alt="Selected Jarvis camera capture" hidden><div id="empty-state" class="empty-state"><span class="frame-icon">⌖</span><h3>Waiting for a capture</h3><p>Available frames will appear here.</p></div><span id="frame-label" class="frame-label" hidden>ORIGINAL FRAME</span></div>
+<div class="viewer-footer"><div><p class="eyebrow">CAPTURED</p><p id="image-timestamp">No frame selected</p></div><div class="frame-navigation"><button id="prev-btn" aria-label="Previous capture">←</button><span id="frame-position">00 / 00</span><button id="next-btn" aria-label="Next capture">→</button></div></div></div>
+<aside class="gallery-panel"><div class="gallery-heading"><div><span class="section-number">02</span><h2>Recent captures</h2></div><button id="latest-btn" class="text-button">Follow latest <span>↗</span></button></div><p class="gallery-description">Select a moment to inspect.</p><button id="changes-filter-btn" class="text-button" aria-pressed="false">Show changes only</button><div id="image-grid" class="capture-list" aria-label="Recent camera captures"></div><p id="gallery-empty" class="gallery-empty">Loading your captures…</p></aside>
+</section>
+<section class="monitor-panel" aria-label="Object monitoring">
+
+  <div class="panel-top">
+    <div>
+      <span class="section-number">03</span>
+      <h2>Object monitoring</h2>
+    </div>
+  </div>
+
+  <p class="gallery-description">
+    Live inventory and historical object detection alerts.
+  </p>
+
+  <div class="monitor-stats">
+    <div>
+      <h3>Present objects</h3>
+      <strong id="objects-present">—</strong>
+    </div>
+
+    <div>
+      <h3>Missing objects</h3>
+      <strong id="objects-missing">—</strong>
+    </div>
+
+    <div>
+      <h3>People detected</h3>
+      <strong id="people-count">—</strong>
+    </div>
+  </div>
+
+  <h3>Recent monitoring history</h3>
+
+  <div id="object-events">
+    Waiting for object monitor data...
+  </div>
+
+</section>
+<footer class="page-footer"><span><span class="tiny-square"></span> JARVIS VISION</span><span id="freshness" role="status">Checking latest capture…</span><span>OBSERVE. UNDERSTAND.</span></footer>
+</main><script src="/static/app.js"></script></body></html>

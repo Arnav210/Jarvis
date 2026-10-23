@@ -6,10 +6,10 @@
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <a class="skip-link" href="#main">Skip to activity</a>
+  <a class="skip-link" href="#main">Skip to captures</a>
   <header class="topbar">
     <a class="brand" href="/" aria-label="Jarvis home"><span class="brand-mark">J.</span><span>JARVIS<small>ROOM INTELLIGENCE</small></span></a>
-    <nav aria-label="Dashboard sections"><a href="#activity" class="nav-active">Activity</a><a href="#captures">Captures</a></nav>
+    <nav aria-label="Dashboard sections"><a href="#captures" class="nav-active">Captures</a></nav>
     <span class="connection"><span id="status-dot" class="dot"></span><span id="status-badge" role="status">Connecting</span></span>
   </header>
   <main id="main">
@@ -20,15 +20,6 @@
       <div class="stat"><span><i class="stat-icon">◈</i>Present objects</span><strong id="objects-present">—</strong><small>In the latest inventory</small></div>
       <div class="stat missing"><span><i class="stat-icon">−</i>Missing objects</span><strong id="objects-missing">—</strong><small>Reported missing by the monitor</small></div>
       <div class="stat people"><span><i class="stat-icon">◉</i>People detected</span><strong id="people-count">—</strong><small>In the latest observation</small></div>
-      <div class="stat"><span><i class="stat-icon">↗</i>Recorded changes</span><strong id="event-total">—</strong><small id="inventory-time">No inventory timestamp yet</small></div>
-    </section>
-    <section id="activity" class="panel activity-panel" aria-labelledby="activity-title">
-      <div class="panel-heading"><div><p class="eyebrow">01 / ACTIVITY LOG</p><h2 id="activity-title">The room's timeline.</h2></div><span class="panel-note">Recorded observations · newest first</span></div>
-      <div class="activity-toolbar"><div class="filter-group" role="group" aria-label="Filter monitoring events"><button data-filter="all" aria-pressed="true">All changes</button><button data-filter="object_missing" aria-pressed="false"><span class="key missing-key"></span>Missing</button><button data-filter="new_object" aria-pressed="false"><span class="key added-key"></span>New</button><button data-filter="object_returned" aria-pressed="false"><span class="key returned-key"></span>Returned</button><button data-filter="person_count_changed" aria-pressed="false"><span class="key people-key"></span>People</button></div><label class="search"><span aria-hidden="true">⌕</span><input id="event-search" type="search" placeholder="Search loaded history" aria-label="Search loaded monitoring history"></label></div>
-      <div class="history-meta"><span id="history-count" role="status">Loading history…</span><button id="clear-filters" class="text-button" hidden>Clear filters</button></div>
-      <div id="object-events" class="timeline" aria-label="Recorded monitoring events"></div>
-      <div id="history-empty" class="empty-state"><span class="empty-icon" aria-hidden="true">◎</span><h3>Loading the timeline</h3><p>Recorded changes will appear here.</p></div>
-      <div class="history-footer"><p id="history-scope">History comes from the object monitor's saved log.</p><button id="load-older" class="button" hidden>Load older events <span aria-hidden="true">↓</span></button></div>
     </section>
     <section id="captures" aria-labelledby="captures-title">
       <div class="section-heading"><div><p class="eyebrow">02 / VISUAL EVIDENCE</p><h2 id="captures-title">Look a little closer.</h2><p class="intro small">Explore recent captures and the changes recorded with each frame.</p></div><span class="count-badge"><strong id="capture-count">—</strong> recent captures</span></div>

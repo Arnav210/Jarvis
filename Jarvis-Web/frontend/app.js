@@ -8,8 +8,7 @@ const TYPES = {
 };
 let currentRuns = [], selectedFolder = null, viewMode = 'original', followLatest = true;
 let capturesConnected = false, monitorConnected = false, changesOnly = false;
-let events = [], eventFilter = 'all', searchText = '', historyId = null, totalEvents = 0;
-let hasOlder = false, olderCursor = null, olderLoading = false, monitorLoading = false;
+let monitorLoading = false;
 let lastMonitorCheck = null, monitorStateAvailable = false, failedImage = null;
 let configuredMaskCategories = [], maskSourceAvailable = false;
 let excludedMaskCategories = new Set();
@@ -120,34 +119,6 @@ function renderGallery() {
   $('gallery-empty').hidden=visibleRuns().length>0;
   $('gallery-empty').textContent=changesOnly?'No recent captures with recorded changes.':capturesConnected?'No captures saved yet.':'Capture archive unavailable. Retrying automatically.';
 }
-function associatedRun(event) {
-  return currentRuns.find(run=>Array.isArray(run.change_log?.changes)&&run.change_log.changes.some(change=>change&&change.time===event.time && change.event===event.event && change.message===event.message));
-}
-function renderHistory() {
-  const container=$('object-events');const previousScroll=container.scrollTop;
-  container.replaceChildren();
-  const filtered=events.filter(event=>(eventFilter==='all'||event.event===eventFilter)&&`${event.message||''} ${typeInfo(event.event).label}`.toLowerCase().includes(searchText));
-  let lastDay='';
-  for(const event of filtered){
-    const date=new Date(event.time), valid=!isNaN(date), day=valid?date.toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric',year:'numeric'}):'Date unavailable';
-    if(day!==lastDay){container.append(el('h3','day-heading',day));lastDay=day;}
-    const type=typeInfo(event.event), row=el('article','event '+type.tone);
-    const body=el('div','event-body');body.append(el('p','event-type',type.label),el('p','event-message',event.message||type.label));
-    const run=associatedRun(event);
-    if(run){const context=el('div','event-context');const button=el('button','','Inspect capture ↗');button.onclick=()=>{changesOnly=false;$('changes-filter').checked=false;selectCapture(run.folder);$('captures').scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'});};context.append(button);body.append(context);}
-    const time=el('time','',valid?date.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit',second:'2-digit'}):'Time unavailable');if(valid)time.dateTime=date.toISOString();
-    const symbol=el('span','event-symbol',type.icon);symbol.setAttribute('aria-hidden','true');row.append(symbol,body,time);container.append(row);
-  }
-  container.scrollTop=previousScroll;
-  $('history-empty').hidden=filtered.length>0;
-  $('history-empty').querySelector('h3').textContent=!monitorConnected&&!events.length?'Monitoring is unavailable':events.length?'No matching changes':'No recorded changes yet';
-  $('history-empty').querySelector('p').textContent=events.length?'Try another filter, change your search, or load older events.':monitorConnected?'Saved monitoring events will appear here.':'The page will retry automatically. Existing captures remain available.';
-  $('history-count').textContent=`${filtered.length} matching ${filtered.length===1?'event':'events'} · ${events.length} loaded of ${totalEvents} recorded`;
-  $('clear-filters').hidden=eventFilter==='all'&&!searchText;
-  $('load-older').hidden=!hasOlder;$('load-older').disabled=olderLoading;
-  $('load-older').textContent=olderLoading?'Loading older events…':'Load older events ↓';
-  $('history-scope').textContent=!monitorConnected?'Waiting for the monitoring connection. Previously loaded history is kept on screen.':hasOlder?'Filters and search apply to loaded history. Load older events to search further back.':'All available history is loaded. Filters and search apply to this history.';
-}
 function updateFreshness() {
   const date=captureDate(currentRuns[0]), age=date?Math.max(0,Date.now()-date.getTime()):null;
   const stale=age!==null&&age>120000;
@@ -167,52 +138,35 @@ async function fetchRuns() {
     currentRuns=runs;capturesConnected=true;
     const list=visibleRuns();
     if(followLatest||!list.some(r=>r.folder===selectedFolder)){selectedFolder=list[0]?.folder||null;failedImage=null;}
-    renderDisplay();if(changed){renderGallery();renderHistory();}
+    renderDisplay();if(changed){renderGallery();}
     if(data.preview)$('demo-notice').hidden=false;
   }catch{capturesConnected=false;if(!currentRuns.length)renderGallery();}
   updateFreshness();
 }
-async function fetchMonitor(older=false) {
+async function fetchMonitor() {
   if(monitorLoading)return;
-  monitorLoading=true;if(older){olderLoading=true;renderHistory();}
+  monitorLoading=true;
   try{
-    const response=await fetch('/api/object-monitor?limit=50'+(older&&olderCursor?`&before=${olderCursor}`:''),{cache:'no-store',signal:AbortSignal.timeout(8000)});
+    const response=await fetch('/api/object-monitor?limit=1',{cache:'no-store',signal:AbortSignal.timeout(8000)});
     if(!response.ok)throw Error('Object monitor unavailable');
-    const data=await response.json();if(!Array.isArray(data.recent_events))throw Error('Invalid monitor response');
-    const incoming=data.recent_events.filter(e=>e&&TYPES[e.event]&&Number.isInteger(e.sequence));
-    const reset=historyId!==null&&data.history_id!==historyId;
-    if(reset){events=[];hasOlder=false;olderCursor=null;}
-    historyId=data.history_id;
-    const existing=new Map(events.map(event=>[event.sequence,event]));for(const event of incoming)existing.set(event.sequence,event);
-    const merged=Array.from(existing.values()).sort((a,b)=>b.sequence-a.sequence);
-    const changed=JSON.stringify(merged)!==JSON.stringify(events)||!monitorConnected||reset;
-    const firstLoad=events.length===0;events=merged;totalEvents=data.total_events??events.length;
-    if(older||reset||firstLoad){hasOlder=!!data.has_more;olderCursor=data.next_before;}
-    monitorStateAvailable=!!data.state_available;
+    const data=await response.json();monitorStateAvailable=!!data.state_available;
     const objects=Object.values(data.objects||{}).filter(o=>o&&typeof o==='object');
     $('objects-present').textContent=monitorStateAvailable?objects.filter(o=>o.status==='present').length:'—';
     $('objects-missing').textContent=monitorStateAvailable?objects.filter(o=>o.status==='missing'||o.status==='removed').length:'—';
     $('people-count').textContent=monitorStateAvailable&&Number.isFinite(data.person_count)?data.person_count:'—';
-    $('event-total').textContent=String(totalEvents);
-    $('inventory-time').textContent=data.updated_at?'Inventory saved '+dateText(new Date(data.updated_at),{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'No inventory timestamp yet';
     monitorConnected=true;lastMonitorCheck=new Date();
     const notes=Array.isArray(data.warnings)?data.warnings:[];
     $('monitor-notice').hidden=notes.length===0&&monitorStateAvailable;
     $('monitor-notice').textContent=notes.join(' ')||'No saved object inventory yet. Counts remain unavailable until the monitor records an observation.';
-    if(changed||older)renderHistory();
-    if(data.preview)$('demo-notice').hidden=false;
   }catch{
     monitorConnected=false;$('monitor-notice').hidden=false;
-    $('monitor-notice').textContent=events.length?'Monitoring connection lost. Showing previously loaded history; retrying automatically.':'Monitoring data is unavailable. The page will retry automatically.';
-    renderHistory();
-  }finally{monitorLoading=false;olderLoading=false;$('load-older').disabled=false;$('load-older').textContent='Load older events ↓';updateFreshness();}
+    $('monitor-notice').textContent='Monitoring connection lost. Showing the last loaded inventory; retrying automatically.';
+  }finally{monitorLoading=false;updateFreshness();}
 }
+
 async function refresh(){const button=$('refresh-btn');button.disabled=true;try{await Promise.all([fetchRuns(),fetchMonitor(),fetchMaskCategories()]);}finally{button.disabled=false;}}
 async function poll(){if(!document.hidden)await refresh();setTimeout(poll,5000);}
-for(const button of document.querySelectorAll('[data-filter]'))button.onclick=()=>{eventFilter=button.dataset.filter;for(const other of document.querySelectorAll('[data-filter]'))other.setAttribute('aria-pressed',String(other===button));$('object-events').scrollTop=0;renderHistory();};
-$('event-search').oninput=event=>{searchText=event.target.value.trim().toLowerCase();$('object-events').scrollTop=0;renderHistory();};
-$('clear-filters').onclick=()=>{eventFilter='all';searchText='';$('event-search').value='';for(const button of document.querySelectorAll('[data-filter]'))button.setAttribute('aria-pressed',String(button.dataset.filter==='all'));renderHistory();};
-$('load-older').onclick=()=>fetchMonitor(true);$('refresh-btn').onclick=refresh;
+$('refresh-btn').onclick=refresh;
 $('original-btn').onclick=()=>setView('original');$('overlay-btn').onclick=()=>setView('overlay');
 $('changes-filter').onchange=event=>{changesOnly=event.target.checked;const list=visibleRuns();if(!list.some(r=>r.folder===selectedFolder))selectedFolder=list[0]?.folder||null;renderDisplay();renderGallery();};
 $('latest-btn').onclick=()=>{followLatest=true;selectedFolder=visibleRuns()[0]?.folder||null;failedImage=null;renderDisplay();renderGallery();};
@@ -224,4 +178,4 @@ $('masks-all').onclick=()=>{for(const category of maskCategories())excludedMaskC
 $('masks-none').onclick=()=>{for(const category of maskCategories())excludedMaskCategories.add(category);saveMaskSelection();};
 $('close-dialog').onclick=()=>$('image-dialog').close();
 $('image-dialog').onclick=event=>{if(event.target===$('image-dialog')){const r=event.target.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)event.target.close();}};
-renderDisplay();renderGallery();renderHistory();poll();setInterval(updateFreshness,30000);
+renderDisplay();renderGallery();poll();setInterval(updateFreshness,30000);

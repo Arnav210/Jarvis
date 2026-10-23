@@ -1,16 +1,24 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
 
 project_dir="${JARVIS_HOME:-$HOME/Jarvis}"
 footage_dir="$project_dir/Footage"
 camera_device="${JARVIS_CAMERA_DEVICE:-/dev/video0}"
 
 mkdir -p "$footage_dir"
+# Serialize manual and scheduled captures of the same camera.
+exec 9>"${XDG_RUNTIME_DIR:-/tmp}/jarvis-camera-${UID}.lock"
+flock -n 9 || { echo "Camera capture already running" >&2; exit 1; }
 timestamp=$(date '+%Y-%m-%d_%H-%M-%S_%6N')
 output="$footage_dir/${timestamp}.jpg"
+# Publish only complete pictures so failed captures never trigger inference.
+partial=$(mktemp "$footage_dir/.capture-XXXXXXXX.jpg.part")
+trap 'rm -f -- "$partial"' EXIT
 
-ffmpeg -hide_banner -loglevel error -y \
+timeout --kill-after=5s 35s ffmpeg -nostdin -hide_banner -loglevel error -y \
   -f v4l2 -input_format yuyv422 -video_size 640x480 \
-  -i "$camera_device" -frames:v 1 -q:v 2 "$output"
-
+  -i "$camera_device" -frames:v 1 -q:v 2 -f image2 "$partial"
+test -s "$partial"
+mv -- "$partial" "$output"
 printf '%s\n' "$output"

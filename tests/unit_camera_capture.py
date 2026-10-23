@@ -36,6 +36,16 @@ class CameraCaptureTests(unittest.TestCase):
         self.assertFalse(partials)
         self.assertRegex(result.stdout, r"/Footage/\d{4}-\d{2}-\d{2}_.*\.jpg\n$")
 
+    def test_shared_feed_is_used_without_opening_webcam(self):
+        result, pictures, partials = self.capture(
+            '[[ "$*" == *"-f mpjpeg -i http://127.0.0.1:8766/stream.mjpg"* ]] || exit 98\n'
+            '[[ "$*" != *"/dev/video"* ]] || exit 97\n'
+            'printf shared > "${@: -1}"\n',
+            stream_url="http://127.0.0.1:8766/stream.mjpg")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(pictures, [b"shared"])
+        self.assertFalse(partials)
+
     def test_failure_never_publishes_a_partial_picture(self):
         result, pictures, partials = self.capture('printf incomplete > "${@: -1}"\nexit 1\n')
         self.assertNotEqual(result.returncode, 0)

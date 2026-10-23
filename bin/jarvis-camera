@@ -16,9 +16,19 @@ output="$footage_dir/${timestamp}.jpg"
 partial=$(mktemp "$footage_dir/.capture-XXXXXXXX.jpg.part")
 trap 'rm -f -- "$partial"' EXIT
 
+# Reuse the local shared feed when the room stream is running; otherwise
+# open the webcam only long enough to take this one still picture.
+stream_url="${JARVIS_CAMERA_STREAM_URL:-}"
+if [[ -z "$stream_url" ]] && timeout 2s systemctl --user is-active --quiet jarvis-camera-feed.service; then
+  stream_url="http://127.0.0.1:8766/stream.mjpg"
+fi
+if [[ -n "$stream_url" ]]; then
+  input_args=(-f mpjpeg -i "$stream_url")
+else
+  input_args=(-f v4l2 -input_format yuyv422 -video_size 640x480 -i "$camera_device")
+fi
 timeout --kill-after=5s 35s ffmpeg -nostdin -hide_banner -loglevel error -y \
-  -f v4l2 -input_format yuyv422 -video_size 640x480 \
-  -i "$camera_device" -frames:v 1 -q:v 2 -f image2 "$partial"
+  "${input_args[@]}" -frames:v 1 -an -q:v 2 -f image2 "$partial"
 test -s "$partial"
 mv -- "$partial" "$output"
 printf '%s\n' "$output"

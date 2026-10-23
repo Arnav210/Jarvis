@@ -12,7 +12,7 @@ PYTHON_BIN="$HOME/miniconda3/envs/sam3/bin/python"
 echo "Watching $FOOTAGE for new images..."
 
 
-inotifywait -m -e close_write --format '%w%f' "$FOOTAGE" |
+inotifywait -m -e close_write,moved_to --format '%w%f' "$FOOTAGE" |
 while read IMAGE
 do
     # Only process JPG/JPEG files

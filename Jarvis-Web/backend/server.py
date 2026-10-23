@@ -145,7 +145,7 @@ def get_latest_runs():
     folders = sorted((p for p in RUNS_DIR.iterdir() if p.is_dir()),
                      key=lambda p: p.stat().st_mtime, reverse=True)
     results = []
-    for folder in folders[:10]:
+    for folder in folders[:46]:
         files = list(folder.iterdir())
         original = next((p.name for p in files if p.is_file() and p.name.lower().startswith("original.")), None)
         overlay = next((p.name for p in files if p.is_file() and p.name.lower().startswith("combined_overlay.")), None)

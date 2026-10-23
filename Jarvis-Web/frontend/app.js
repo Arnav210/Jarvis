@@ -9,6 +9,7 @@ const TYPES = {
 let currentRuns = [], selectedFolder = null, viewMode = 'original', followLatest = true;
 let capturesConnected = false, monitorConnected = false, changesOnly = false;
 let monitorLoading = false;
+let captureRequest = 0;
 let lastMonitorCheck = null, monitorStateAvailable = false, failedImage = null;
 let configuredMaskCategories = [], maskSourceAvailable = false;
 let excludedMaskCategories = new Set();
@@ -115,9 +116,9 @@ function renderGallery() {
   }
   if(focusedFolder){const card=Array.from(grid.children).find(c=>c.dataset.folder===focusedFolder);card?.focus({preventScroll:true});}
   $('capture-count').textContent=String(currentRuns.length).padStart(2,'0');
-  $('capture-filter-count').textContent=`${visibleRuns().length} of ${currentRuns.length} recent captures shown`;
+  $('capture-filter-count').textContent=`${visibleRuns().length} of ${currentRuns.length} captures on this day shown`;
   $('gallery-empty').hidden=visibleRuns().length>0;
-  $('gallery-empty').textContent=changesOnly?'No recent captures with recorded changes.':capturesConnected?'No captures saved yet.':'Capture archive unavailable. Retrying automatically.';
+  $('gallery-empty').textContent=changesOnly?'No captures with recorded changes on this day.':capturesConnected?'No pictures saved for this day.':'Capture archive unavailable. Retrying automatically.';
 }
 let selectedDay=null, roomToday=null, occupancyData=null, occupancySignature='', occupancyRequest=0;
 let selectedObservationTime=null, followToday=true;
@@ -178,6 +179,11 @@ function renderOccupancy() {
   $('previous-day').disabled=!selectedDay;
   if(roomToday)$('occupancy-date').max=roomToday;
   if(selectedDay)$('occupancy-date').value=selectedDay;
+  $('captures-date').value=selectedDay||'';
+  if(roomToday)$('captures-date').max=roomToday;
+  $('captures-previous-day').disabled=!selectedDay;
+  $('captures-next-day').disabled=!selectedDay||!roomToday||selectedDay>=roomToday;
+  $('capture-day-label').textContent=selectedDay?new Date(selectedDay+'T12:00:00Z').toLocaleDateString(undefined,{timeZone:'UTC',month:'long',day:'numeric',year:'numeric'})+' · Pacific time':'Choose a day';
   const selected=points.find(point=>point.time===selectedObservationTime)||points.at(-1);
   if(selected)showObservation(selected);else $('occupancy-readout').textContent='No count was recorded for this day. Blank hours do not mean zero people.';
   const latest=occupancyData?.latest_observation;
@@ -209,10 +215,13 @@ async function fetchOccupancy() {
 }
 function changeObservationDay(day) {
   if(!/^\d{4}-\d{2}-\d{2}$/.test(day)||day>roomToday)return;
-  selectedDay=day;followToday=day===roomToday;selectedObservationTime=null;occupancyData=null;occupancySignature='';renderOccupancy();fetchOccupancy();
+  selectedDay=day;followToday=day===roomToday;selectedObservationTime=null;occupancyData=null;occupancySignature='';captureRequest++;currentRuns=[];selectedFolder=null;capturesConnected=false;failedImage=null;renderDisplay();renderGallery();renderOccupancy();refresh();
 }
 function offsetObservationDay(offset){if(!selectedDay)return;const value=new Date(selectedDay+'T12:00:00Z');value.setUTCDate(value.getUTCDate()+offset);changeObservationDay(value.toISOString().slice(0,10));}
 $('occupancy-date').onchange=event=>changeObservationDay(event.target.value);
+$('captures-date').onchange=event=>changeObservationDay(event.target.value);
+$('captures-previous-day').onclick=()=>offsetObservationDay(-1);$('captures-next-day').onclick=()=>offsetObservationDay(1);
+$('captures-today').onclick=()=>{if(roomToday)changeObservationDay(roomToday);};
 $('previous-day').onclick=()=>offsetObservationDay(-1);$('next-day').onclick=()=>offsetObservationDay(1);
 $('today-btn').onclick=()=>{if(roomToday)changeObservationDay(roomToday);};
 $('observations-toggle').onclick=()=>{const show=$('observations-table').hidden;$('observations-table').hidden=!show;$('observations-toggle').setAttribute('aria-expanded',String(show));$('observations-toggle').textContent=show?'Hide observations':'Show observations';};
@@ -229,10 +238,12 @@ function updateFreshness() {
   $('freshness').textContent=!capturesConnected?'Capture archive unavailable · retrying':!date?'No saved captures yet':`Latest capture: ${captureText(currentRuns[0])}${stale?' · no recent capture':''}`;
 }
 async function fetchRuns() {
+  const request=++captureRequest,requestedDay=selectedDay;
+  if(!requestedDay)return;
   try{
-    const response=await fetch('/api/latest',{cache:'no-store',signal:AbortSignal.timeout(8000)});
+    const response=await fetch('/api/latest?day='+encodeURIComponent(requestedDay),{cache:'no-store',signal:AbortSignal.timeout(8000)});
     if(!response.ok)throw Error('Capture archive unavailable');
-    const data=await response.json();if(!Array.isArray(data.runs))throw Error('Invalid capture response');
+    const data=await response.json();if(request!==captureRequest||requestedDay!==selectedDay)return;if(!Array.isArray(data.runs)||data.day!==requestedDay)throw Error('Invalid capture response');
     const runs=data.runs.filter(r=>r&&typeof r.folder==='string').map(normalizeRun).filter(r=>r.original||r.overlay);
     const changed=JSON.stringify(runs)!==JSON.stringify(currentRuns)||!capturesConnected;
     currentRuns=runs;capturesConnected=true;
@@ -240,7 +251,7 @@ async function fetchRuns() {
     if(followLatest||!list.some(r=>r.folder===selectedFolder)){selectedFolder=list[0]?.folder||null;failedImage=null;}
     renderDisplay();if(changed){renderGallery();if(occupancyData)renderObservationTable();}
     if(data.preview)$('demo-notice').hidden=false;
-  }catch{capturesConnected=false;if(!currentRuns.length)renderGallery();}
+  }catch{if(request!==captureRequest||requestedDay!==selectedDay)return;capturesConnected=false;if(!currentRuns.length)renderGallery();}
   updateFreshness();
 }
 async function fetchMonitor() {
@@ -264,7 +275,7 @@ async function fetchMonitor() {
   }finally{monitorLoading=false;updateFreshness();}
 }
 
-async function refresh(){const button=$('refresh-btn');button.disabled=true;try{await Promise.all([fetchRuns(),fetchMonitor(),fetchMaskCategories(),fetchOccupancy()]);}finally{button.disabled=false;}}
+async function refresh(){const button=$('refresh-btn');button.disabled=true;try{await Promise.all([fetchMonitor(),fetchMaskCategories(),fetchOccupancy()]);await fetchRuns();}finally{button.disabled=false;}}
 async function poll(){if(!document.hidden)await refresh();setTimeout(poll,5000);}
 $('refresh-btn').onclick=refresh;
 $('original-btn').onclick=()=>setView('original');$('overlay-btn').onclick=()=>setView('overlay');

@@ -1,8 +1,10 @@
 [Unit]
-Description=Capture a Jarvis room picture every ten minutes
+Description=Capture Jarvis room pictures every ten minutes from 08:10 to 15:40 Pacific
 
 [Timer]
-OnCalendar=*-*-* *:0/10:00
+OnCalendar=*-*-* 08:10,20,30,40,50:00 America/Los_Angeles
+OnCalendar=*-*-* 09..14:00/10:00 America/Los_Angeles
+OnCalendar=*-*-* 15:00,10,20,30,40:00 America/Los_Angeles
 AccuracySec=1s
 Persistent=false
 Unit=jarvis-capture.service

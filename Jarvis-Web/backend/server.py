@@ -1,6 +1,7 @@
 """Jarvis's read-only capture archive and paged object-monitoring history."""
 from collections import deque
-from datetime import datetime, timezone
+from datetime import date, datetime, time, timedelta, timezone
+from zoneinfo import ZoneInfo
 import ast
 from io import BytesIO
 import json
@@ -227,6 +228,117 @@ def get_object_monitor(limit: int = Query(50, ge=1, le=200),
             "has_more": eligible > len(events),
             "next_before": events[0]["sequence"] if events and eligible > len(events) else None,
             "history_id": history_id, "warnings": warnings}
+
+
+def room_timezone():
+    try:
+        name = os.environ.get("TZ") or Path('/etc/timezone').read_text().strip()
+        return ZoneInfo(name), name
+    except (OSError, ValueError, KeyError):
+        return timezone.utc, 'UTC'
+
+
+def saved_json(path):
+    try:
+        value = json.loads(path.read_text(encoding='utf-8'))
+        return value if isinstance(value, dict) else {}
+    except (OSError, ValueError, UnicodeError):
+        return {}
+
+
+def person_count(value):
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
+
+
+@app.get('/api/occupancy')
+def get_occupancy(day: str | None = Query(None, max_length=10)):
+    """Daily observed counts, without carrying old values across unobserved hours."""
+    zone, zone_name = room_timezone()
+    today = datetime.now(zone).date()
+    try:
+        selected_day = date.fromisoformat(day) if day else today
+        if day and selected_day.isoformat() != day:
+            raise ValueError('Use YYYY-MM-DD')
+    except ValueError as error:
+        raise HTTPException(400, 'Choose a valid date in YYYY-MM-DD format') from error
+    start = datetime.combine(selected_day, time.min, zone)
+    end = datetime.combine(selected_day + timedelta(days=1), time.min, zone)
+    observations, represented_events, warnings = {}, set(), []
+
+    def add(key, stamp, count, source, run_id=None):
+        count = person_count(count)
+        if count is None or not isinstance(stamp, str):
+            return
+        try:
+            observed = datetime.fromisoformat(stamp.replace('Z', '+00:00'))
+            if observed.tzinfo is None:
+                observed = observed.replace(tzinfo=zone)
+            observed = observed.astimezone(zone)
+        except ValueError:
+            return
+        observations[key] = {'time': observed.isoformat(), 'count': count,
+                             'hour': observed.hour + observed.minute / 60 + observed.second / 3600,
+                             'source': source, 'run_id': run_id}
+
+    state = saved_json(MONITOR_DIR / 'object_state.json')
+    try:
+        folders = list(RUNS_DIR.iterdir()) if RUNS_DIR.is_dir() else []
+        for folder in folders:
+            if not folder.is_dir():
+                continue
+            manifest = saved_json(folder / 'manifest.json')
+            report = saved_json(folder / 'changes.json')
+            changes = report.get('changes', [])
+            changes = changes if isinstance(changes, list) else []
+            count = person_count(report.get('person_count'))
+            last_change = None
+            for event in changes:
+                if not isinstance(event, dict) or event.get('event') != 'person_count_changed':
+                    continue
+                data = event.get('data', {})
+                value = person_count(data.get('current')) if isinstance(data, dict) else None
+                if value is not None:
+                    last_change = event
+                    if isinstance(event.get('time'), str):
+                        represented_events.add((event['time'], value))
+            if count is None and last_change:
+                count = person_count(last_change['data'].get('current'))
+            if count is None and state.get('last_run_id') == folder.name:
+                count = person_count(state.get('person_count'))
+            stamp = report.get('observed_at') or manifest.get('captured_at')
+            if not stamp:
+                try:
+                    stamp = datetime.strptime(folder.name[:19], '%Y-%m-%d_%H-%M-%S').replace(tzinfo=zone).isoformat()
+                except ValueError:
+                    stamp = last_change.get('time') if last_change else None
+            add('capture:' + folder.name, stamp, count, 'capture', folder.name)
+    except OSError:
+        warnings.append('Some saved captures are temporarily unavailable.')
+
+    try:
+        with (MONITOR_DIR / 'events.jsonl').open(encoding='utf-8', errors='replace') as source:
+            for sequence, line in enumerate(source, 1):
+                try:
+                    event = json.loads(line)
+                except ValueError:
+                    continue
+                if not isinstance(event, dict) or event.get('event') != 'person_count_changed':
+                    continue
+                data = event.get('data', {})
+                count = person_count(data.get('current')) if isinstance(data, dict) else None
+                if isinstance(event.get('time'), str) and (event['time'], count) not in represented_events:
+                    add('event:' + str(sequence), event.get('time'), count, 'monitor event')
+    except FileNotFoundError:
+        pass
+    except OSError:
+        warnings.append('Some saved count events are temporarily unavailable.')
+
+    ordered = sorted(observations.values(), key=lambda point: datetime.fromisoformat(point['time']).timestamp())
+    points = [point for point in ordered if start <= datetime.fromisoformat(point['time']) < end]
+    return {'day': selected_day.isoformat(), 'today': today.isoformat(), 'timezone': zone_name,
+            'start': start.isoformat(), 'end': end.isoformat(), 'observations': points,
+            'peak': max((point['count'] for point in points), default=None),
+            'latest_observation': ordered[-1] if ordered else None, 'warnings': warnings}
 
 
 if __name__ == "__main__":

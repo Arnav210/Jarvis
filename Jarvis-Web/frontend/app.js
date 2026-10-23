@@ -162,7 +162,7 @@ function renderOccupancy() {
   svg.append(svgNode('text',{x:left,y:16,class:'chart-axis'},'PEOPLE'));
   for(let i=1;i<points.length;i++){
     const previous=points[i-1],point=points[i],gap=new Date(point.time)-new Date(previous.time);
-    if(gap>=0&&gap<=300000&&point.hour>=previous.hour)svg.append(svgNode('path',{d:`M ${x(previous)} ${y(previous.count)} H ${x(point)} V ${y(point.count)}`,class:'occupancy-line'}));
+    if(gap>=0&&gap<=900000&&point.hour>=previous.hour)svg.append(svgNode('path',{d:`M ${x(previous)} ${y(previous.count)} H ${x(point)} V ${y(point.count)}`,class:'occupancy-line'}));
   }
   for(const point of points){
     const dot=svgNode('circle',{cx:x(point),cy:y(point.count),r:5.5,class:'occupancy-point',tabindex:0,role:'img','aria-label':`${point.count} people at ${roomTime(point.time,{hour:'numeric',minute:'2-digit',second:'2-digit'})}`});
@@ -181,8 +181,8 @@ function renderOccupancy() {
   const selected=points.find(point=>point.time===selectedObservationTime)||points.at(-1);
   if(selected)showObservation(selected);else $('occupancy-readout').textContent='No count was recorded for this day. Blank hours do not mean zero people.';
   const latest=occupancyData?.latest_observation;
-  $('people-observed-at').textContent=latest?'Observed '+roomTime(latest.time,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})+(Date.now()-new Date(latest.time)>300000?' · not current':''):'No timestamped people observation';
-  $('people-observed-at').classList.toggle('stale',!!latest&&Date.now()-new Date(latest.time)>300000);
+  $('people-observed-at').textContent=latest?'Observed '+roomTime(latest.time,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})+(Date.now()-new Date(latest.time)>900000?' · not current':''):'No timestamped people observation';
+  $('people-observed-at').classList.toggle('stale',!!latest&&Date.now()-new Date(latest.time)>900000);
   renderObservationTable();
 }
 async function fetchOccupancy() {
@@ -219,7 +219,7 @@ $('observations-toggle').onclick=()=>{const show=$('observations-table').hidden;
 
 function updateFreshness() {
   const latest=occupancyData?.latest_observation;
-  if(latest){const staleCount=Date.now()-new Date(latest.time)>300000;$('people-observed-at').textContent='Observed '+roomTime(latest.time,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})+(staleCount?' · not current':'');$('people-observed-at').classList.toggle('stale',staleCount);}
+  if(latest){const staleCount=Date.now()-new Date(latest.time)>900000;$('people-observed-at').textContent='Observed '+roomTime(latest.time,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})+(staleCount?' · not current':'');$('people-observed-at').classList.toggle('stale',staleCount);}
   const date=captureDate(currentRuns[0]), age=date?Math.max(0,Date.now()-date.getTime()):null;
   const stale=age!==null&&age>120000;
   $('status-badge').textContent=monitorConnected&&capturesConnected?'Archive connected':monitorConnected||capturesConnected?'Partial connection':'Disconnected · retrying';

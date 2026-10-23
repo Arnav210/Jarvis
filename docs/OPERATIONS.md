@@ -43,3 +43,35 @@ Do not trigger audio playback, alarms, volume changes, camera capture, enrollmen
 ## Command console
 
 `jarvis-status --open` opens the desktop view without recording or playback. `jarvis-status` views it in the current terminal; press Q to close the view. Check `$XDG_RUNTIME_DIR/jarvis-status/window.log` if a desktop window fails to open. The console uses the existing desktop session and opens no network port.
+
+
+## Automatic room observations
+
+`jarvis-capture.timer` takes one picture every ten minutes from 8:10 AM
+through 3:40 PM, including both endpoints, every day in America/Los_Angeles
+(Pacific time, following daylight saving changes). This is 46 scheduled
+pictures per day; no scheduled pictures are taken overnight.
+Each complete picture is published atomically to `Footage/`. The existing
+`jarvis-sam3.service` processes it into `Masks/runs/`, then the object monitor
+saves the people count for the website's daily occupancy graph. Processing
+can take several minutes. Failed camera captures do not publish partial files. When the shared local
+camera feed is active, snapshots reuse it so the room stream can continue.
+The timer does not replay missed pictures after downtime.
+
+Install the two `systemd/user/jarvis-capture.*` files in
+`~/.config/systemd/user/`, then run `systemctl --user daemon-reload` and
+`systemctl --user enable --now jarvis-capture.timer`. The watcher must include
+`moved_to` events for atomic capture publishing. Restart it after updating
+`bin/run_sam.sh`. User lingering is enabled on the live host so the timer
+continues without an SSH session. Camera permissions currently come from the
+active Ubuntu desktop login: keep toby logged into the desktop and the Mac
+mini awake. Logging out or rebooting to the login screen can remove webcam
+access until the next desktop login.
+
+Check the schedule with `systemctl --user list-timers jarvis-capture.timer`.
+Check failures with `journalctl --user -u jarvis-capture.service` and
+`journalctl --user -u jarvis-sam3.service`. Pause scheduled capture with
+`systemctl --user disable --now jarvis-capture.timer`; resume with
+`systemctl --user enable --now jarvis-capture.timer`. Originals and generated
+masks remain private ignored runtime files. There is no automatic retention
+cleanup; monitor disk space as the archive grows.

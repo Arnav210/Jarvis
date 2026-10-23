@@ -1,14 +1,17 @@
 """Jarvis's read-only capture archive and paged object-monitoring history."""
 from collections import deque
 from datetime import datetime, timezone
+import ast
+from io import BytesIO
 import json
 import os
 from pathlib import Path
 
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
+from PIL import Image, ImageDraw
 
 app = FastAPI()
 # Preserve the existing dashboard access configuration.
@@ -19,6 +22,7 @@ FRONTEND_DIR = BASE_DIR / "frontend"
 JARVIS_DIR = BASE_DIR.parent
 RUNS_DIR = JARVIS_DIR / "Masks" / "runs"
 MONITOR_DIR = JARVIS_DIR / "object_monitor" / "object_monitor"
+SAM3_SOURCE = JARVIS_DIR / "src" / "jarvis" / "vision" / "sam3_process.py"
 EVENT_TYPES = {"new_object", "object_missing", "object_returned", "person_count_changed"}
 app.mount("/runs", StaticFiles(directory=str(RUNS_DIR), check_dir=False), name="runs")
 app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
@@ -27,6 +31,110 @@ app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
 @app.get("/")
 def read_root():
     return FileResponse(FRONTEND_DIR / "index.html")
+
+
+def sam3_settings():
+    """Read literal settings without importing SAM3 or running model inference."""
+    settings = {}
+    try:
+        tree = ast.parse(SAM3_SOURCE.read_text(encoding="utf-8"))
+        for node in tree.body:
+            if isinstance(node, ast.Assign):
+                for target in node.targets:
+                    if isinstance(target, ast.Name) and target.id in {"prompts", "palette"}:
+                        try:
+                            settings[target.id] = ast.literal_eval(node.value)
+                        except (ValueError, TypeError):
+                            pass
+    except (OSError, SyntaxError, UnicodeError):
+        pass
+    prompts = settings.get("prompts", [])
+    prompts = list(dict.fromkeys(p for p in prompts if isinstance(p, str) and p)) if isinstance(prompts, (list, tuple)) else []
+    palette = settings.get("palette", [])
+    palette = [tuple(c) for c in palette if isinstance(c, (list, tuple)) and len(c) == 3 and all(isinstance(v, int) and 0 <= v <= 255 for v in c)] if isinstance(palette, (list, tuple)) else []
+    return prompts, palette
+
+
+@app.get("/api/mask-categories")
+def get_mask_categories():
+    prompts, _ = sam3_settings()
+    return {"categories": prompts, "source_available": bool(prompts)}
+
+
+def inside_file(folder, relative):
+    if not isinstance(relative, str) or not relative:
+        return None
+    candidate = (folder / relative).resolve()
+    return candidate if candidate.is_relative_to(folder.resolve()) and candidate.is_file() else None
+
+
+def run_manifest(folder):
+    try:
+        value = json.loads((folder / "manifest.json").read_text(encoding="utf-8"))
+        if isinstance(value, dict) and isinstance(value.get("detections"), list):
+            return value
+    except (OSError, ValueError, UnicodeError):
+        pass
+    return None
+
+
+def manifest_categories(manifest):
+    prompts = manifest.get("prompts", [])
+    prompts = prompts if isinstance(prompts, list) else []
+    detected = [d.get("prompt") for d in manifest["detections"] if isinstance(d, dict)]
+    return list(dict.fromkeys(p for p in [*prompts, *detected] if isinstance(p, str) and p))
+
+
+@app.get("/api/overlay/{run_id}")
+def filtered_overlay(run_id: str, categories: list[str] | None = Query(None)):
+    folder = (RUNS_DIR / run_id).resolve()
+    if folder.parent != RUNS_DIR.resolve() or not folder.is_dir():
+        raise HTTPException(404, "Capture not found")
+    manifest = run_manifest(folder)
+    if manifest is None:
+        raise HTTPException(409, "This capture has no individual mask manifest")
+    prompts = manifest_categories(manifest)
+    requested = set(prompts if categories is None else (c for c in categories if c))
+    configured, palette = sam3_settings()
+    if not requested.issubset(set(prompts) | set(configured)):
+        raise HTTPException(400, "Unknown mask category")
+    original = inside_file(folder, manifest.get("saved_original"))
+    if original is None:
+        raise HTTPException(409, "The saved original is unavailable")
+    try:
+        with Image.open(original) as image:
+            canvas = image.convert("RGB")
+        annotations = []
+        for detection in manifest["detections"]:
+            if not isinstance(detection, dict) or not isinstance(detection.get("prompt"), str) or detection["prompt"] not in requested:
+                continue
+            mask_path = inside_file(folder, detection.get("raw_mask"))
+            if mask_path is None:
+                raise HTTPException(409, "An individual mask is unavailable for this capture")
+            category_index = prompts.index(detection["prompt"])
+            index = detection.get("index", 0)
+            index = index if isinstance(index, int) else 0
+            color = palette[(category_index * 7 + index) % len(palette)] if palette else (201, 237, 155)
+            with Image.open(mask_path) as mask_image:
+                mask = mask_image.convert("L").point(lambda value: 255 if value else 0)
+            if mask.size != canvas.size:
+                raise HTTPException(409, "The saved mask dimensions do not match the capture")
+            tinted = Image.blend(canvas, Image.new("RGB", canvas.size, color), 0.45)
+            canvas = Image.composite(tinted, canvas, mask)
+            box = detection.get("box")
+            if isinstance(box, list) and len(box) == 4 and all(isinstance(v, (int, float)) for v in box):
+                score = detection.get("score")
+                label = detection["prompt"] + (f" {score:.2f}" if isinstance(score, (int, float)) else "")
+                annotations.append((box, label, color))
+        draw = ImageDraw.Draw(canvas)
+        for box, label, color in annotations:
+            draw.rectangle(tuple(box), outline=color, width=3)
+            draw.text((box[0] + 4, max(2, box[1] - 14)), label, fill=color, stroke_width=2, stroke_fill=(0, 0, 0))
+        output = BytesIO()
+        canvas.save(output, format="PNG")
+        return Response(output.getvalue(), media_type="image/png", headers={"Cache-Control": "private, max-age=3600"})
+    except (OSError, ValueError) as error:
+        raise HTTPException(409, "Saved mask data could not be rendered") from error
 
 
 @app.get("/api/latest")
@@ -55,7 +163,13 @@ def get_latest_runs():
             captured_at = datetime.strptime(folder.name[:19], "%Y-%m-%d_%H-%M-%S").astimezone().isoformat()
         except ValueError:
             pass
+        manifest = run_manifest(folder)
+        categories = manifest_categories(manifest) if manifest else []
+        counts = {category: sum(1 for d in manifest["detections"] if isinstance(d, dict) and d.get("prompt") == category) for category in categories} if manifest else {}
+        filterable = bool(manifest is not None and inside_file(folder, manifest.get("saved_original")) and all(isinstance(d, dict) and isinstance(d.get("prompt"), str) and inside_file(folder, d.get("raw_mask")) for d in manifest["detections"]))
         results.append({"folder": folder.name, "captured_at": captured_at,
+                        "mask_categories": categories, "category_counts": counts,
+                        "mask_filterable": filterable,
                         "change_log": change_log,
                         "original": f"/runs/{folder.name}/{original}" if original else None,
                         "overlay": f"/runs/{folder.name}/{overlay}" if overlay else None})

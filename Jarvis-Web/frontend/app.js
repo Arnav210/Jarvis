@@ -11,6 +11,9 @@ let capturesConnected = false, monitorConnected = false, changesOnly = false;
 let events = [], eventFilter = 'all', searchText = '', historyId = null, totalEvents = 0;
 let hasOlder = false, olderCursor = null, olderLoading = false, monitorLoading = false;
 let lastMonitorCheck = null, monitorStateAvailable = false, failedImage = null;
+let configuredMaskCategories = [], maskSourceAvailable = false;
+let excludedMaskCategories = new Set();
+try {const saved=JSON.parse(localStorage.getItem('jarvis-hidden-mask-categories')||'[]');if(Array.isArray(saved))excludedMaskCategories=new Set(saved.filter(value=>typeof value==='string'));} catch {}
 const selectedRun = () => currentRuns.find(run => run.folder === selectedFolder);
 const visibleRuns = () => changesOnly ? currentRuns.filter(r => Array.isArray(r.change_log?.changes) && r.change_log.changes.length) : currentRuns;
 const el = (tag, className, text) => {const node=document.createElement(tag); if(className)node.className=className; if(text!==undefined)node.textContent=text; return node;};
@@ -27,6 +30,42 @@ function normalizeRun(run) {
   return {...run, original:safeImage(run.original),overlay:safeImage(run.overlay)};
 }
 function typeInfo(type) {return TYPES[type] || {label:'Observation',tone:'added',icon:'·'};}
+function maskCategories(run=selectedRun()) {return [...new Set([...configuredMaskCategories,...(Array.isArray(run?.mask_categories)?run.mask_categories:[])])];}
+function imageForRun(run, mode=viewMode) {
+  if(!run)return null;
+  if(mode==='original')return run.original;
+  const categories=maskCategories(run).filter(category=>!excludedMaskCategories.has(category));
+  const hidden=(run.mask_categories?.length?run.mask_categories:configuredMaskCategories).some(category=>excludedMaskCategories.has(category));
+  if(!categories.length && maskCategories(run).length)return run.original;
+  if(!hidden)return run.overlay || (run.mask_filterable?filteredMaskUrl(run,categories):null);
+  if(!categories.length || !run.mask_filterable)return run.original;
+  return filteredMaskUrl(run,categories);
+}
+function filteredMaskUrl(run,categories) {const query=new URLSearchParams();if(!categories.length)query.append('categories','');else for(const category of categories)query.append('categories',category);return `/api/overlay/${encodeURIComponent(run.folder)}?${query}`;}
+function saveMaskSelection() {try{localStorage.setItem('jarvis-hidden-mask-categories',JSON.stringify([...excludedMaskCategories]));}catch{}failedImage=null;viewMode='overlay';renderDisplay();renderGallery();}
+function renderMaskControls(run) {
+  const container=$('mask-category-list'), focusedCategory=document.activeElement?.dataset?.maskCategory;
+  container.replaceChildren();const categories=maskCategories(run);
+  for(const category of categories){
+    const label=el('label','mask-category'), input=el('input');input.type='checkbox';input.value=category;input.dataset.maskCategory=category;input.checked=!excludedMaskCategories.has(category);
+    const name=el('span','',category.replaceAll('_',' '));
+    const count=el('small','',String(run?.category_counts?.[category]??0));count.setAttribute('aria-label',`${run?.category_counts?.[category]??0} masks in selected capture`);
+    input.onchange=()=>{if(input.checked)excludedMaskCategories.delete(category);else excludedMaskCategories.add(category);saveMaskSelection();};label.append(input,name,count);container.append(label);
+  }
+  if(focusedCategory)Array.from(container.querySelectorAll('input')).find(input=>input.value===focusedCategory)?.focus({preventScroll:true});
+  $('masks-all').disabled=!categories.length;$('masks-none').disabled=!categories.length;
+  $('mask-source').textContent=maskSourceAvailable?'Categories from SAM3’s detection prompts.':categories.length?'SAM3 settings unavailable; using this capture’s saved categories.':'No SAM3 category list is available for this capture.';
+  const selected=categories.filter(category=>!excludedMaskCategories.has(category));
+  const maskCount=selected.reduce((sum,category)=>sum+(run?.category_counts?.[category]||0),0);
+  const partial=categories.some(category=>excludedMaskCategories.has(category));
+  $('mask-summary').textContent=!run?'Choose a capture to inspect its masks.':!run.mask_filterable?(partial?'Individual masks are unavailable for this older capture. Showing the original when categories are hidden.':'Saved combined overlay only · individual category counts are unavailable for this capture.'):`${selected.length} of ${categories.length} categories selected · ${maskCount} masks${viewMode==='original'?' · original view':''}`;
+  if($('image-dialog').open){const url=imageForRun(run);if(url)$('expanded-image').src=url;}
+}
+async function fetchMaskCategories() {
+  try{const response=await fetch('/api/mask-categories',{cache:'no-store',signal:AbortSignal.timeout(8000)});if(!response.ok)throw Error();const data=await response.json();configuredMaskCategories=Array.isArray(data.categories)?data.categories.filter(c=>typeof c==='string'):[];maskSourceAvailable=!!data.source_available;}
+  catch{maskSourceAvailable=false;}
+  renderDisplay();renderGallery();
+}
 function setView(mode) {viewMode=mode; failedImage=null; renderDisplay();renderGallery();}
 function selectCapture(folder) {
   selectedFolder=folder;followLatest=false;failedImage=null;
@@ -41,13 +80,13 @@ function renderSelectedChanges(run) {
   for(const event of changes){const type=typeInfo(event.event);container.append(el('span','change-line '+type.tone,`${type.icon} ${event.message || type.label}`));}
 }
 function renderDisplay() {
-  const run=selectedRun(), img=$('featured-image'), url=run?.[viewMode];
+  const run=selectedRun(), img=$('featured-image'), url=imageForRun(run);
   const unavailable=!url || failedImage===url;
   img.hidden=unavailable;$('empty-state').hidden=!unavailable;$('frame-label').hidden=unavailable;
   if(url && img.getAttribute('src')!==url)img.src=url;
   $('empty-state').querySelector('h3').textContent=failedImage===url && url ? 'Image could not load' : run ? 'This view is unavailable' : 'Waiting for a capture';
   $('empty-state').querySelector('p').textContent=run ? 'Choose another view or capture.' : capturesConnected ? 'Saved frames will appear here.' : 'Waiting for the capture archive connection.';
-  $('frame-label').textContent=viewMode==='original'?'ORIGINAL FRAME':'DETECTION OVERLAY';
+  $('frame-label').textContent=viewMode==='original'?'ORIGINAL FRAME':!maskCategories(run).some(c=>!excludedMaskCategories.has(c))?'NO MASKS SELECTED':url===run?.original?'ORIGINAL · MASKS UNAVAILABLE':'DETECTION OVERLAY';
   $('original-btn').setAttribute('aria-pressed',String(viewMode==='original'));
   $('overlay-btn').setAttribute('aria-pressed',String(viewMode==='overlay'));
   $('image-timestamp').textContent=run?captureText(run)+(run.captured_at?'':' · camera local time'):'No frame selected';
@@ -58,6 +97,7 @@ function renderDisplay() {
   $('latest-btn').textContent=followLatest?'Following latest ↗':'Follow latest ↗';
   $('latest-btn').setAttribute('aria-pressed',String(followLatest));
   renderSelectedChanges(run);
+  renderMaskControls(run);
 }
 function renderGallery() {
   const grid=$('image-grid'), focusedFolder=document.activeElement?.dataset?.folder;
@@ -66,7 +106,7 @@ function renderGallery() {
     const card=el('button','capture-card');card.dataset.folder=run.folder;
     card.setAttribute('aria-pressed',String(run.folder===selectedFolder));
     card.setAttribute('aria-label',`Inspect capture ${captureText(run)}`);
-    const img=el('img');img.src=run[viewMode]||run.original||run.overlay;img.alt='';img.loading='lazy';
+    const img=el('img');img.src=imageForRun(run)||run.original||run.overlay;img.alt='';img.loading='lazy';
     const info=el('span','capture-info');
     info.append(el('strong','',dateText(captureDate(run),{hour:'numeric',minute:'2-digit',second:'2-digit'})),el('small','',dateText(captureDate(run),{month:'short',day:'numeric',year:'numeric'})));
     if(run.folder===currentRuns[0]?.folder)info.append(el('small','new-tag','LATEST'));
@@ -167,7 +207,7 @@ async function fetchMonitor(older=false) {
     renderHistory();
   }finally{monitorLoading=false;olderLoading=false;$('load-older').disabled=false;$('load-older').textContent='Load older events ↓';updateFreshness();}
 }
-async function refresh(){const button=$('refresh-btn');button.disabled=true;try{await Promise.all([fetchRuns(),fetchMonitor()]);}finally{button.disabled=false;}}
+async function refresh(){const button=$('refresh-btn');button.disabled=true;try{await Promise.all([fetchRuns(),fetchMonitor(),fetchMaskCategories()]);}finally{button.disabled=false;}}
 async function poll(){if(!document.hidden)await refresh();setTimeout(poll,5000);}
 for(const button of document.querySelectorAll('[data-filter]'))button.onclick=()=>{eventFilter=button.dataset.filter;for(const other of document.querySelectorAll('[data-filter]'))other.setAttribute('aria-pressed',String(other===button));$('object-events').scrollTop=0;renderHistory();};
 $('event-search').oninput=event=>{searchText=event.target.value.trim().toLowerCase();$('object-events').scrollTop=0;renderHistory();};
@@ -178,8 +218,10 @@ $('changes-filter').onchange=event=>{changesOnly=event.target.checked;const list
 $('latest-btn').onclick=()=>{followLatest=true;selectedFolder=visibleRuns()[0]?.folder||null;failedImage=null;renderDisplay();renderGallery();};
 function navigate(step){const list=visibleRuns(),i=list.findIndex(r=>r.folder===selectedFolder),next=list[i+step];if(next)selectCapture(next.folder);}
 $('prev-btn').onclick=()=>navigate(-1);$('next-btn').onclick=()=>navigate(1);
-$('featured-image').onerror=()=>{failedImage=selectedRun()?.[viewMode];renderDisplay();};
-$('expand-btn').onclick=()=>{const run=selectedRun(),url=run?.[viewMode];if(!url)return;$('expanded-image').src=url;$('dialog-caption').textContent=captureText(run);$('dialog-title').textContent=viewMode==='original'?'Original capture':'Detection overlay';$('image-dialog').showModal();};
+$('featured-image').onerror=()=>{failedImage=imageForRun(selectedRun());renderDisplay();};
+$('expand-btn').onclick=()=>{const run=selectedRun(),url=imageForRun(run);if(!url)return;$('expanded-image').src=url;$('dialog-caption').textContent=captureText(run);$('dialog-title').textContent=viewMode==='original'?'Original capture':'Detection overlay';$('image-dialog').showModal();};
+$('masks-all').onclick=()=>{for(const category of maskCategories())excludedMaskCategories.delete(category);saveMaskSelection();};
+$('masks-none').onclick=()=>{for(const category of maskCategories())excludedMaskCategories.add(category);saveMaskSelection();};
 $('close-dialog').onclick=()=>$('image-dialog').close();
 $('image-dialog').onclick=event=>{if(event.target===$('image-dialog')){const r=event.target.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)event.target.close();}};
 renderDisplay();renderGallery();renderHistory();poll();setInterval(updateFreshness,30000);

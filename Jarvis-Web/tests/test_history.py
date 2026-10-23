@@ -40,7 +40,7 @@ class HistoryTests(unittest.TestCase):
     def test_partial_lines_and_unknown_events_do_not_hide_history(self):
         self.write_events(3)
         with (server.MONITOR_DIR / "events.jsonl").open("a", encoding="utf-8") as f:
-            f.write('[]\n{"event":"diagnostic"}\n{"event":')
+            f.write('[]\n{"event":[]}\n{"event":{}}\n{"event":"diagnostic"}\n{"event":')
         result = server.get_object_monitor(2, None)
         self.assertEqual(result["total_events"], 3)
         self.assertEqual(len(result["recent_events"]), 2)

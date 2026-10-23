@@ -841,6 +841,8 @@ if run_folder.is_dir():
     }
 
     report = {
+        "person_count": current_person_count,
+        "observed_at": manifest.get("captured_at"),
         "current_capture": run_id,
         "previous_capture": previous_run_id,
         "changes": [

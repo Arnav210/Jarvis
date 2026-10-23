@@ -119,12 +119,112 @@ function renderGallery() {
   $('gallery-empty').hidden=visibleRuns().length>0;
   $('gallery-empty').textContent=changesOnly?'No recent captures with recorded changes.':capturesConnected?'No captures saved yet.':'Capture archive unavailable. Retrying automatically.';
 }
+let selectedDay=null, roomToday=null, occupancyData=null, occupancySignature='', occupancyRequest=0;
+let selectedObservationTime=null, followToday=true;
+const SVG_NS='http://www.w3.org/2000/svg';
+function svgNode(tag, attributes, text) {
+  const node=document.createElementNS(SVG_NS,tag);
+  for(const [key,value] of Object.entries(attributes||{}))node.setAttribute(key,String(value));
+  if(text!==undefined)node.textContent=text;
+  return node;
+}
+function roomTime(stamp, options={hour:'numeric',minute:'2-digit'}) {
+  return new Date(stamp).toLocaleString(undefined,{...options,timeZone:occupancyData?.timezone||'UTC'});
+}
+function showObservation(point) {
+  selectedObservationTime=point.time;
+  $('occupancy-readout').textContent=`${point.count} ${point.count===1?'person':'people'} observed at ${roomTime(point.time,{hour:'numeric',minute:'2-digit',second:'2-digit'})} · ${point.source==='capture'?'saved capture':'saved monitor event'}`;
+}
+function renderObservationTable() {
+  const body=$('observations-body');body.replaceChildren();
+  for(const point of occupancyData?.observations||[]){
+    const row=el('tr');row.append(el('td','',roomTime(point.time,{hour:'numeric',minute:'2-digit',second:'2-digit'})),el('td','',String(point.count)));
+    const source=el('td','',point.source==='capture'?'Saved capture':'Monitor event');
+    if(point.run_id&&currentRuns.some(run=>run.folder===point.run_id)){
+      const button=el('button','text-button','Inspect capture ↗');button.onclick=()=>{changesOnly=false;$('changes-filter').checked=false;selectCapture(point.run_id);$('captures').scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'});};source.append(button);
+    }
+    row.append(source);body.append(row);
+  }
+}
+function renderOccupancy() {
+  const svg=$('occupancy-chart'), points=occupancyData?.observations||[];
+  svg.replaceChildren(svgNode('title',{id:'occupancy-svg-title'},'Observed people across the selected day'),svgNode('desc',{id:'occupancy-svg-description'},'Horizontal axis: midnight to midnight. Vertical axis: number of people. Blank periods have no saved observations. Focus a dot to read its count and time.'));
+  const left=62,right=972,top=28,bottom=244,step=Math.max(1,Math.ceil(Math.max(5,...points.map(p=>p.count))/4)),ceiling=step*4;
+  const x=point=>left+(point.hour/24)*(right-left), y=count=>bottom-(count/ceiling)*(bottom-top);
+  for(let i=0;i<=4;i++){
+    const count=i*step,py=y(count);
+    svg.append(svgNode('line',{x1:left,x2:right,y1:py,y2:py,class:'chart-grid'}),svgNode('text',{x:left-14,y:py+4,'text-anchor':'end',class:'chart-axis'},count));
+  }
+  for(let hour=0;hour<=24;hour+=4){
+    const px=left+(hour/24)*(right-left);
+    svg.append(svgNode('line',{x1:px,x2:px,y1:top,y2:bottom,class:'chart-grid vertical'}),svgNode('text',{x:px,y:bottom+28,'text-anchor':hour===0?'start':hour===24?'end':'middle',class:'chart-axis'},`${String(hour).padStart(2,'0')}:00`));
+  }
+  svg.append(svgNode('text',{x:left,y:16,class:'chart-axis'},'PEOPLE'));
+  for(let i=1;i<points.length;i++){
+    const previous=points[i-1],point=points[i],gap=new Date(point.time)-new Date(previous.time);
+    if(gap>=0&&gap<=300000&&point.hour>=previous.hour)svg.append(svgNode('path',{d:`M ${x(previous)} ${y(previous.count)} H ${x(point)} V ${y(point.count)}`,class:'occupancy-line'}));
+  }
+  for(const point of points){
+    const dot=svgNode('circle',{cx:x(point),cy:y(point.count),r:5.5,class:'occupancy-point',tabindex:0,role:'img','aria-label':`${point.count} people at ${roomTime(point.time,{hour:'numeric',minute:'2-digit',second:'2-digit'})}`});
+    dot.append(svgNode('title',{},`${point.count} people · ${roomTime(point.time)}`));
+    dot.onfocus=dot.onmouseenter=dot.onclick=()=>showObservation(point);svg.append(dot);
+  }
+  if(!points.length)svg.append(svgNode('text',{x:(left+right)/2,y:(top+bottom)/2,'text-anchor':'middle',class:'chart-empty'},occupancyData?'No saved people-count observations for this day':'Loading saved observations…'));
+  $('occupancy-peak').textContent=occupancyData?.peak??'—';
+  $('occupancy-total').textContent=occupancyData?`${points.length} saved ${points.length===1?'observation':'observations'} on selected day`:'No daily observations loaded';
+  $('occupancy-zone').textContent=occupancyData?occupancyData.timezone.replaceAll('_',' '):'Camera local time';
+  $('occupancy-day-label').textContent=selectedDay?new Date(selectedDay+'T12:00:00Z').toLocaleDateString(undefined,{timeZone:'UTC',weekday:'long',month:'long',day:'numeric',year:'numeric'})+' · 00:00–24:00':'Loading the daily graph…';
+  $('next-day').disabled=!selectedDay||!roomToday||selectedDay>=roomToday;
+  $('previous-day').disabled=!selectedDay;
+  if(roomToday)$('occupancy-date').max=roomToday;
+  if(selectedDay)$('occupancy-date').value=selectedDay;
+  const selected=points.find(point=>point.time===selectedObservationTime)||points.at(-1);
+  if(selected)showObservation(selected);else $('occupancy-readout').textContent='No count was recorded for this day. Blank hours do not mean zero people.';
+  const latest=occupancyData?.latest_observation;
+  $('people-observed-at').textContent=latest?'Observed '+roomTime(latest.time,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})+(Date.now()-new Date(latest.time)>300000?' · not current':''):'No timestamped people observation';
+  $('people-observed-at').classList.toggle('stale',!!latest&&Date.now()-new Date(latest.time)>300000);
+  renderObservationTable();
+}
+async function fetchOccupancy() {
+  const request=++occupancyRequest,requestedDay=selectedDay;
+  try{
+    const response=await fetch('/api/occupancy'+(requestedDay?'?day='+encodeURIComponent(requestedDay):''),{cache:'no-store',signal:AbortSignal.timeout(8000)});
+    if(!response.ok)throw Error('Daily observations unavailable');
+    const data=await response.json();
+    if(request!==occupancyRequest)return;
+    if(!Array.isArray(data.observations)||!/^\d{4}-\d{2}-\d{2}$/.test(data.day))throw Error('Invalid occupancy response');
+    if(followToday&&requestedDay&&requestedDay!==data.today){selectedDay=data.today;return fetchOccupancy();}
+    selectedDay=data.day;roomToday=data.today;
+    const signature=JSON.stringify(data);
+    occupancyData=data;
+    if(signature!==occupancySignature){occupancySignature=signature;renderOccupancy();}
+    const warnings=Array.isArray(data.warnings)?data.warnings:[];
+    $('occupancy-warning').hidden=!warnings.length;$('occupancy-warning').textContent=warnings.join(' ');
+    if(data.preview)$('demo-notice').hidden=false;
+  }catch{
+    if(request!==occupancyRequest)return;
+    if(occupancyData?.day!==selectedDay){occupancyData=null;occupancySignature='';renderOccupancy();}
+    $('occupancy-warning').hidden=false;$('occupancy-warning').textContent='People-count observations are unavailable. Retrying automatically; any displayed counts are previously saved data.';
+  }
+}
+function changeObservationDay(day) {
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(day)||day>roomToday)return;
+  selectedDay=day;followToday=day===roomToday;selectedObservationTime=null;occupancyData=null;occupancySignature='';renderOccupancy();fetchOccupancy();
+}
+function offsetObservationDay(offset){if(!selectedDay)return;const value=new Date(selectedDay+'T12:00:00Z');value.setUTCDate(value.getUTCDate()+offset);changeObservationDay(value.toISOString().slice(0,10));}
+$('occupancy-date').onchange=event=>changeObservationDay(event.target.value);
+$('previous-day').onclick=()=>offsetObservationDay(-1);$('next-day').onclick=()=>offsetObservationDay(1);
+$('today-btn').onclick=()=>{if(roomToday)changeObservationDay(roomToday);};
+$('observations-toggle').onclick=()=>{const show=$('observations-table').hidden;$('observations-table').hidden=!show;$('observations-toggle').setAttribute('aria-expanded',String(show));$('observations-toggle').textContent=show?'Hide observations':'Show observations';};
+
 function updateFreshness() {
+  const latest=occupancyData?.latest_observation;
+  if(latest){const staleCount=Date.now()-new Date(latest.time)>300000;$('people-observed-at').textContent='Observed '+roomTime(latest.time,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})+(staleCount?' · not current':'');$('people-observed-at').classList.toggle('stale',staleCount);}
   const date=captureDate(currentRuns[0]), age=date?Math.max(0,Date.now()-date.getTime()):null;
   const stale=age!==null&&age>120000;
   $('status-badge').textContent=monitorConnected&&capturesConnected?'Archive connected':monitorConnected||capturesConnected?'Partial connection':'Disconnected · retrying';
   $('status-dot').classList.toggle('online',monitorConnected&&capturesConnected);
-  $('monitor-sync').textContent=lastMonitorCheck?`${monitorConnected?'History checked':'Last successful history check'} at ${lastMonitorCheck.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit',second:'2-digit'})}`:'Waiting for monitoring data';
+  $('monitor-sync').textContent=lastMonitorCheck?`${monitorConnected?'Inventory checked':'Last successful inventory check'} at ${lastMonitorCheck.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit',second:'2-digit'})}`:'Waiting for monitoring data';
   $('freshness').classList.toggle('stale',stale||!capturesConnected);
   $('freshness').textContent=!capturesConnected?'Capture archive unavailable · retrying':!date?'No saved captures yet':`Latest capture: ${captureText(currentRuns[0])}${stale?' · no recent capture':''}`;
 }
@@ -138,7 +238,7 @@ async function fetchRuns() {
     currentRuns=runs;capturesConnected=true;
     const list=visibleRuns();
     if(followLatest||!list.some(r=>r.folder===selectedFolder)){selectedFolder=list[0]?.folder||null;failedImage=null;}
-    renderDisplay();if(changed){renderGallery();}
+    renderDisplay();if(changed){renderGallery();if(occupancyData)renderObservationTable();}
     if(data.preview)$('demo-notice').hidden=false;
   }catch{capturesConnected=false;if(!currentRuns.length)renderGallery();}
   updateFreshness();
@@ -164,7 +264,7 @@ async function fetchMonitor() {
   }finally{monitorLoading=false;updateFreshness();}
 }
 
-async function refresh(){const button=$('refresh-btn');button.disabled=true;try{await Promise.all([fetchRuns(),fetchMonitor(),fetchMaskCategories()]);}finally{button.disabled=false;}}
+async function refresh(){const button=$('refresh-btn');button.disabled=true;try{await Promise.all([fetchRuns(),fetchMonitor(),fetchMaskCategories(),fetchOccupancy()]);}finally{button.disabled=false;}}
 async function poll(){if(!document.hidden)await refresh();setTimeout(poll,5000);}
 $('refresh-btn').onclick=refresh;
 $('original-btn').onclick=()=>setView('original');$('overlay-btn').onclick=()=>setView('overlay');
@@ -178,4 +278,4 @@ $('masks-all').onclick=()=>{for(const category of maskCategories())excludedMaskC
 $('masks-none').onclick=()=>{for(const category of maskCategories())excludedMaskCategories.add(category);saveMaskSelection();};
 $('close-dialog').onclick=()=>$('image-dialog').close();
 $('image-dialog').onclick=event=>{if(event.target===$('image-dialog')){const r=event.target.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)event.target.close();}};
-renderDisplay();renderGallery();poll();setInterval(updateFreshness,30000);
+renderDisplay();renderGallery();renderOccupancy();poll();setInterval(updateFreshness,30000);

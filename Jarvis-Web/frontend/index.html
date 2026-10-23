@@ -2,24 +2,36 @@
 <html lang="en">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="theme-color" content="#0a1014"><title>Jarvis · Observation history</title>
+  <meta name="theme-color" content="#0a1014"><title>Jarvis · Room occupancy</title>
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <a class="skip-link" href="#main">Skip to captures</a>
+  <a class="skip-link" href="#main">Skip to room occupancy</a>
   <header class="topbar">
     <a class="brand" href="/" aria-label="Jarvis home"><span class="brand-mark">J.</span><span>JARVIS<small>ROOM INTELLIGENCE</small></span></a>
-    <nav aria-label="Dashboard sections"><a href="#captures" class="nav-active">Captures</a></nav>
+    <nav aria-label="Dashboard sections"><a href="#occupancy" class="nav-active">Occupancy</a><a href="#captures">Captures</a></nav>
     <span class="connection"><span id="status-dot" class="dot"></span><span id="status-badge" role="status">Connecting</span></span>
   </header>
   <main id="main">
-    <section class="page-heading"><div><p class="eyebrow">VISION / OBSERVATION HISTORY</p><h1>Every change,<br><span>in perspective.</span></h1><p class="intro">Follow what arrived, what went missing, and what came back. Inspect the capture behind each observation.</p></div><div class="heading-note"><span class="tiny-square"></span> YOUR LOCAL OBSERVATION ARCHIVE<p id="monitor-sync">Waiting for monitoring data</p><button id="refresh-btn" class="button quiet">Refresh now <span aria-hidden="true">↻</span></button></div></section>
+    <section class="page-heading"><div><p class="eyebrow">VISION / ROOM OCCUPANCY</p><h1>The room,<br><span>throughout the day.</span></h1><p class="intro">See how the observed number of people changes over a full day, then explore the captures behind the counts.</p></div><div class="heading-note"><span class="tiny-square"></span> YOUR LOCAL OBSERVATION ARCHIVE<p id="monitor-sync">Waiting for monitoring data</p><button id="refresh-btn" class="button quiet">Refresh now <span aria-hidden="true">↻</span></button></div></section>
     <div id="demo-notice" class="notice" hidden>Preview with synthetic observations. No camera or microphone is active.</div>
     <div id="monitor-notice" class="notice" role="status" hidden></div>
     <section class="summary" aria-label="Latest recorded inventory">
       <div class="stat"><span><i class="stat-icon">◈</i>Present objects</span><strong id="objects-present">—</strong><small>In the latest inventory</small></div>
       <div class="stat missing"><span><i class="stat-icon">−</i>Missing objects</span><strong id="objects-missing">—</strong><small>Reported missing by the monitor</small></div>
-      <div class="stat people"><span><i class="stat-icon">◉</i>People detected</span><strong id="people-count">—</strong><small>In the latest observation</small></div>
+      <div class="stat people"><span><i class="stat-icon">◉</i>People last observed</span><strong id="people-count">—</strong><small id="people-observed-at">Waiting for an observation time</small></div>
+      <div class="stat"><span><i class="stat-icon">↗</i>Peak on selected day</span><strong id="occupancy-peak">—</strong><small id="occupancy-total">No daily observations loaded</small></div>
+    </section>
+    <section id="occupancy" class="panel occupancy-panel" aria-labelledby="occupancy-title">
+      <div class="panel-heading"><div><p class="eyebrow">01 / PEOPLE OVER 24 HOURS</p><h2 id="occupancy-title">A day in the room.</h2></div><div class="day-controls"><button id="previous-day" class="button" aria-label="Previous day">←</button><label><span class="sr-only">Observation date</span><input id="occupancy-date" type="date" aria-label="Observation date"></label><button id="next-day" class="button" aria-label="Next day">→</button><button id="today-btn" class="button">Today</button></div></div>
+      <div class="chart-heading"><p id="occupancy-day-label">Loading the daily graph…</p><span id="occupancy-zone">Camera local time</span></div>
+      <div id="occupancy-warning" class="chart-warning" role="status" hidden></div>
+      <div class="chart-scroll"><svg id="occupancy-chart" viewBox="0 0 1000 300" role="img" aria-labelledby="occupancy-svg-title occupancy-svg-description"><title id="occupancy-svg-title">Observed people across the selected day</title><desc id="occupancy-svg-description">Horizontal axis: midnight to midnight. Vertical axis: number of people. Blank periods have no saved observations.</desc></svg></div>
+      <p class="chart-mobile-hint">Swipe across the graph to see all 24 hours.</p>
+      <div class="chart-readout" id="occupancy-readout" role="status">Waiting for saved people-count observations.</div>
+      <div class="chart-footer"><p><span class="chart-dot" aria-hidden="true"></span> Saved observation <span class="chart-line" aria-hidden="true"></span> Short observation interval</p><button id="observations-toggle" class="text-button" aria-expanded="false" aria-controls="observations-table">Show observations</button></div>
+      <p class="chart-note">Blank periods mean no observations, not an empty room. Lines connect samples no more than five minutes apart. Counts are detector estimates, not a verified headcount.</p>
+      <div id="observations-table" class="observations-table" hidden><table><thead><tr><th scope="col">Time</th><th scope="col">People</th><th scope="col">Source</th></tr></thead><tbody id="observations-body"></tbody></table></div>
     </section>
     <section id="captures" aria-labelledby="captures-title">
       <div class="section-heading"><div><p class="eyebrow">02 / VISUAL EVIDENCE</p><h2 id="captures-title">Look a little closer.</h2><p class="intro small">Explore recent captures and the changes recorded with each frame.</p></div><span class="count-badge"><strong id="capture-count">—</strong> recent captures</span></div>

@@ -1,0 +1,11 @@
+[Unit]
+Description=Capture a Jarvis room picture every ten minutes
+
+[Timer]
+OnCalendar=*-*-* *:0/10:00
+AccuracySec=1s
+Persistent=false
+Unit=jarvis-capture.service
+
+[Install]
+WantedBy=timers.target

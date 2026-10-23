@@ -1,0 +1,11 @@
+[Unit]
+Description=Capture one room picture for Jarvis monitoring
+Requires=jarvis-sam3.service
+After=jarvis-sam3.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/Jarvis
+ExecStart=%h/Jarvis/bin/jarvis-camera
+TimeoutStartSec=45
+UMask=0077

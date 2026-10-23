@@ -141,3 +141,54 @@ class OccupancyTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DailyCaptureTests(unittest.TestCase):
+    def setUp(self):
+        from unittest.mock import patch
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.patch = patch.object(server, "RUNS_DIR", Path(self.directory.name))
+        self.patch.start()
+        self.addCleanup(self.patch.stop)
+        self.zone_patch = patch.dict(server.os.environ, {"TZ": "America/Los_Angeles"})
+        self.zone_patch.start()
+        self.addCleanup(self.zone_patch.stop)
+
+    def capture(self, name, stamp=None):
+        folder = server.RUNS_DIR / name
+        folder.mkdir()
+        (folder / "original.jpg").write_bytes(b"synthetic")
+        if stamp:
+            (folder / "manifest.json").write_text(json.dumps({"captured_at": stamp, "detections": []}))
+        return folder
+
+    def test_selected_day_includes_46_frames_and_extra_manual_captures(self):
+        for i in range(47):
+            self.capture(f"2026-10-22_08-{i:02d}-00")
+        self.capture("2026-10-21_15-40-00")
+        result = server.get_latest_runs("2026-10-22", 46)
+        self.assertEqual(len(result["runs"]), 47)
+        self.assertEqual(result["day"], "2026-10-22")
+        self.assertEqual(result["runs"][0]["folder"], "2026-10-22_08-46-00")
+        self.assertTrue(all(r["folder"].startswith("2026-10-22") for r in result["runs"]))
+
+    def test_latest_default_has_46_frames(self):
+        for i in range(48):
+            self.capture(f"2026-10-22_08-{i:02d}-00")
+        result = server.get_latest_runs()
+        self.assertEqual(len(result["runs"]), 46)
+        self.assertEqual(result["runs"][0]["folder"], "2026-10-22_08-47-00")
+
+    def test_manifest_uses_camera_date_not_utc_date_or_folder_name(self):
+        self.capture("2026-10-23_01-00-00", "2026-10-23T01:00:00Z")
+        result = server.get_latest_runs("2026-10-22")
+        self.assertEqual(len(result["runs"]), 1)
+        self.assertTrue(result["runs"][0]["captured_at"].startswith("2026-10-22T18:00:00"))
+        self.assertEqual(server.get_latest_runs("2026-10-23")["runs"], [])
+
+    def test_empty_day_and_invalid_dates(self):
+        self.assertEqual(server.get_latest_runs("2026-10-20")["runs"], [])
+        for day in ["2026-02-30", "20261022", "bad-date"]:
+            with self.assertRaises(server.HTTPException):
+                server.get_latest_runs(day)

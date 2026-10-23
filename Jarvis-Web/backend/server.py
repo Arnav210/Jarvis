@@ -139,14 +139,25 @@ def filtered_overlay(run_id: str, categories: list[str] | None = Query(None)):
 
 
 @app.get("/api/latest")
-def get_latest_runs():
+def get_latest_runs(day: str | None = None, limit: int = 46):
+    zone, zone_name = room_timezone()
+    if not 1 <= limit <= 200:
+        raise HTTPException(400, "Limit must be between 1 and 200")
+    if day is not None:
+        try:
+            if date.fromisoformat(day).isoformat() != day:
+                raise ValueError("Use YYYY-MM-DD")
+        except ValueError as error:
+            raise HTTPException(400, "Choose a valid date in YYYY-MM-DD format") from error
     if not RUNS_DIR.is_dir():
-        return {"runs": []}
-    folders = sorted((p for p in RUNS_DIR.iterdir() if p.is_dir()),
-                     key=lambda p: p.stat().st_mtime, reverse=True)
+        return {"runs": [], "day": day, "timezone": zone_name}
+    folders = (p for p in RUNS_DIR.iterdir() if p.is_dir())
     results = []
-    for folder in folders[:46]:
-        files = list(folder.iterdir())
+    for folder in folders:
+        try:
+            files = list(folder.iterdir())
+        except OSError:
+            continue
         original = next((p.name for p in files if p.is_file() and p.name.lower().startswith("original.")), None)
         overlay = next((p.name for p in files if p.is_file() and p.name.lower().startswith("combined_overlay.")), None)
         if not (original or overlay):
@@ -158,13 +169,24 @@ def get_latest_runs():
                 change_log = value
         except (OSError, ValueError, UnicodeError):
             pass
-        captured_at = None
-        try:
-            # Folder times are local to the camera host, not the visitor's browser.
-            captured_at = datetime.strptime(folder.name[:19], "%Y-%m-%d_%H-%M-%S").astimezone().isoformat()
-        except ValueError:
-            pass
         manifest = run_manifest(folder)
+        stamp = None
+        if manifest and isinstance(manifest.get("captured_at"), str):
+            try:
+                stamp = datetime.fromisoformat(manifest["captured_at"].replace("Z", "+00:00"))
+                if stamp.tzinfo is None:
+                    stamp = stamp.replace(tzinfo=zone)
+                stamp = stamp.astimezone(zone)
+            except ValueError:
+                pass
+        if stamp is None:
+            try:
+                stamp = datetime.strptime(folder.name[:19], "%Y-%m-%d_%H-%M-%S").replace(tzinfo=zone)
+            except ValueError:
+                pass
+        if day is not None and (stamp is None or stamp.date().isoformat() != day):
+            continue
+        captured_at = stamp.isoformat() if stamp else None
         categories = manifest_categories(manifest) if manifest else []
         counts = {category: sum(1 for d in manifest["detections"] if isinstance(d, dict) and d.get("prompt") == category) for category in categories} if manifest else {}
         filterable = bool(manifest is not None and inside_file(folder, manifest.get("saved_original")) and all(isinstance(d, dict) and isinstance(d.get("prompt"), str) and inside_file(folder, d.get("raw_mask")) for d in manifest["detections"]))
@@ -174,7 +196,11 @@ def get_latest_runs():
                         "change_log": change_log,
                         "original": f"/runs/{folder.name}/{original}" if original else None,
                         "overlay": f"/runs/{folder.name}/{overlay}" if overlay else None})
-    return {"runs": results}
+    results.sort(key=lambda run: (run["captured_at"] or "", run["folder"]), reverse=True)
+    # A selected day includes every saved frame, even when manual captures
+    # take it beyond the 46 scheduled pictures. The default remains bounded.
+    return {"runs": results if day is not None else results[:limit],
+            "day": day, "timezone": zone_name}
 
 
 @app.get("/api/object-monitor")

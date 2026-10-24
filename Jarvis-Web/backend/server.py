@@ -89,6 +89,18 @@ def manifest_categories(manifest):
     return list(dict.fromkeys(p for p in [*prompts, *detected] if isinstance(p, str) and p))
 
 
+def draw_mask_contours(canvas, outlines, width=1):
+    """Draw the boundaries of every mask component and hole without changing masks."""
+    import cv2
+    import numpy as np
+    pixels = np.array(canvas.convert("RGB"))
+    for mask, color in outlines:
+        binary = np.array(mask.convert("L"))
+        contours, _ = cv2.findContours(binary, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+        cv2.drawContours(pixels, contours, -1, color, width, lineType=cv2.LINE_8)
+    return Image.fromarray(pixels)
+
+
 @app.get("/api/overlay/{run_id}")
 def filtered_overlay(run_id: str, categories: list[str] | None = Query(None)):
     folder = (RUNS_DIR / run_id).resolve()
@@ -108,7 +120,7 @@ def filtered_overlay(run_id: str, categories: list[str] | None = Query(None)):
     try:
         with Image.open(original) as image:
             canvas = image.convert("RGB")
-        annotations = []
+        annotations, outlines = [], []
         for detection in manifest["detections"]:
             if not isinstance(detection, dict) or not isinstance(detection.get("prompt"), str) or detection["prompt"] not in requested:
                 continue
@@ -123,16 +135,17 @@ def filtered_overlay(run_id: str, categories: list[str] | None = Query(None)):
                 mask = mask_image.convert("L").point(lambda value: 255 if value else 0)
             if mask.size != canvas.size:
                 raise HTTPException(409, "The saved mask dimensions do not match the capture")
-            tinted = Image.blend(canvas, Image.new("RGB", canvas.size, color), 0.45)
+            tinted = Image.blend(canvas, Image.new("RGB", canvas.size, color), 0.22)
             canvas = Image.composite(tinted, canvas, mask)
-            box = detection.get("box")
-            if isinstance(box, list) and len(box) == 4 and all(isinstance(v, (int, float)) for v in box):
+            outlines.append((mask, color))
+            box = mask.getbbox()
+            if box is not None:
                 score = detection.get("score")
                 label = detection["prompt"] + (f" {score:.2f}" if isinstance(score, (int, float)) else "")
                 annotations.append((box, label, color))
+        canvas = draw_mask_contours(canvas, outlines)
         draw = ImageDraw.Draw(canvas)
         for box, label, color in annotations:
-            draw.rectangle(tuple(box), outline=color, width=3)
             draw.text((box[0] + 4, max(2, box[1] - 14)), label, fill=color, stroke_width=2, stroke_fill=(0, 0, 0))
         output = BytesIO()
         canvas.save(output, format="PNG")

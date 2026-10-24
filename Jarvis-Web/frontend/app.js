@@ -37,11 +37,11 @@ function imageForRun(run, mode=viewMode) {
   const categories=maskCategories(run).filter(category=>!excludedMaskCategories.has(category));
   const hidden=(run.mask_categories?.length?run.mask_categories:configuredMaskCategories).some(category=>excludedMaskCategories.has(category));
   if(!categories.length && maskCategories(run).length)return run.original;
-  if(!hidden)return run.overlay || (run.mask_filterable?filteredMaskUrl(run,categories):null);
+  if(!hidden)return run.mask_filterable?filteredMaskUrl(run,categories):run.overlay;
   if(!categories.length || !run.mask_filterable)return run.original;
   return filteredMaskUrl(run,categories);
 }
-function filteredMaskUrl(run,categories) {const query=new URLSearchParams();if(!categories.length)query.append('categories','');else for(const category of categories)query.append('categories',category);return `/api/overlay/${encodeURIComponent(run.folder)}?${query}`;}
+function filteredMaskUrl(run,categories) {const query=new URLSearchParams({render:'contours-v1'});if(!categories.length)query.append('categories','');else for(const category of categories)query.append('categories',category);return `/api/overlay/${encodeURIComponent(run.folder)}?${query}`;}
 function saveMaskSelection() {try{localStorage.setItem('jarvis-hidden-mask-categories',JSON.stringify([...excludedMaskCategories]));}catch{}failedImage=null;viewMode='overlay';renderDisplay();renderGallery();}
 function renderMaskControls(run) {
   const container=$('mask-category-list'), focusedCategory=document.activeElement?.dataset?.maskCategory;

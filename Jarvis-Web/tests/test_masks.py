@@ -1,5 +1,7 @@
 """Mask controls use saved synthetic images; no model or camera is loaded."""
 import importlib.util
+import sys
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[1] / "backend"))
 from io import BytesIO
 import json
 from pathlib import Path
@@ -51,6 +53,35 @@ class MaskTests(unittest.TestCase):
         self.assertEqual(image.getpixel((0,40)), (100,100,100))
         self.assertNotEqual(image.getpixel((70,40)), (100,100,100))
         self.assertNotEqual(image.getpixel((99,40)), (100,100,100))
+
+    def test_irregular_mask_outline_follows_shape_instead_of_box(self):
+        mask = Image.new("L", (100, 80))
+        mask.paste(255, (20, 25, 35, 70))
+        mask.paste(255, (20, 55, 80, 70))
+        path = self.run / "raw_masks/person_0.png"
+        mask.save(path)
+        self.manifest["detections"][0]["box"] = [20, 25, 80, 70]
+        self.save_manifest()
+        before = path.read_bytes()
+        image = self.render(["person"])
+        self.assertEqual(image.getpixel((34, 45)), (255, 0, 0))
+        self.assertEqual(image.getpixel((80, 40)), (100, 100, 100))
+        self.assertNotEqual(image.getpixel((25, 45)), (255, 0, 0))
+        self.assertEqual(path.read_bytes(), before)
+
+    def test_contours_preserve_holes_and_disconnected_components(self):
+        mask = Image.new("L", (100, 80))
+        mask.paste(255, (20, 20, 60, 60))
+        mask.paste(0, (30, 30, 50, 50))
+        mask.paste(255, (75, 70, 80, 75))
+        base = Image.new("RGB", mask.size, (100, 100, 100))
+        before = mask.tobytes()
+        image = server.draw_mask_contours(base, [(mask, (255, 0, 0))])
+        self.assertEqual(image.getpixel((20, 40)), (255, 0, 0))
+        self.assertEqual(image.getpixel((29, 40)), (255, 0, 0))
+        self.assertEqual(image.getpixel((40, 40)), (100, 100, 100))
+        self.assertEqual(image.getpixel((75, 70)), (255, 0, 0))
+        self.assertEqual(mask.tobytes(), before)
 
     def test_none_selected_is_exact_original(self):
         self.assertEqual(self.render([""]).tobytes(), Image.open(self.run / "original.png").convert("RGB").tobytes())

@@ -139,3 +139,12 @@ capture uses this rule without a service restart or an extra photograph. Existin
 reports and historical counts retain their original values; no historical
 capture, event, or inventory record is rewritten by this source change.
 The website and spoken room questions consume the newly saved counts as usual.
+
+## Mask contour display
+
+The website renders available individual masks with a 22% transparent fill and
+thin outlines following their actual pixel boundaries, including holes and
+separate components. Object inspection uses the same contours with a stronger
+outline. Labels remain near each mask. No SAM3 predictions, saved masks, capture
+files, or inference settings are changed. Older captures without individual
+mask data can only show their previously saved overlay.

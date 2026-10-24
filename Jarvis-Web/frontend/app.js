@@ -263,7 +263,7 @@ async function fetchMonitor() {
     const data=await response.json();monitorStateAvailable=!!data.state_available;
     const objects=Object.values(data.objects||{}).filter(o=>o&&typeof o==='object');
     $('objects-present').textContent=monitorStateAvailable?objects.filter(o=>o.status==='present').length:'—';
-    $('objects-missing').textContent=monitorStateAvailable?objects.filter(o=>o.status==='missing'||o.status==='removed').length:'—';
+    $('objects-missing').textContent='N/A';
     $('people-count').textContent=monitorStateAvailable&&Number.isFinite(data.person_count)?data.person_count:'—';
     monitorConnected=true;lastMonitorCheck=new Date();
     const notes=Array.isArray(data.warnings)?data.warnings:[];

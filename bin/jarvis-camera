@@ -2,6 +2,14 @@
 set -euo pipefail
 umask 077
 
+# Enforce the room's Pacific-time weekend restriction before any camera access.
+weekday=$(TZ=America/Los_Angeles date +%u)
+case "$weekday" in
+  6|7) echo "Photography is disabled on Saturdays and Sundays (Pacific time)." >&2; exit 1 ;;
+  1|2|3|4|5) ;;
+  *) echo "Cannot verify the photography day; capture blocked." >&2; exit 1 ;;
+esac
+
 project_dir="${JARVIS_HOME:-$HOME/Jarvis}"
 footage_dir="$project_dir/Footage"
 camera_device="${JARVIS_CAMERA_DEVICE:-/dev/video0}"

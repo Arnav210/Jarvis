@@ -48,9 +48,11 @@ Do not trigger audio playback, alarms, volume changes, camera capture, enrollmen
 ## Automatic room observations
 
 `jarvis-capture.timer` takes one picture every ten minutes from 8:10 AM
-through 3:40 PM, including both endpoints, every day in America/Los_Angeles
+through 3:40 PM, including both endpoints, Monday through Friday in America/Los_Angeles
 (Pacific time, following daylight saving changes). This is 46 scheduled
-pictures per day; no scheduled pictures are taken overnight.
+pictures per weekday; no scheduled pictures are taken overnight or on weekends.
+The photo command also rejects manual captures on Saturdays and Sundays in Pacific time
+before accessing the camera. There is no weekend override.
 Each complete picture is published atomically to `Footage/`. The existing
 `jarvis-sam3.service` processes it into `Masks/runs/`, then the object monitor
 saves the people count for the website's daily occupancy graph. Processing

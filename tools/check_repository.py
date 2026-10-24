@@ -32,6 +32,8 @@ def git(*args):
 
 WEB_SOURCE_PATHS = {
     'Jarvis-Web/backend/server.py',
+    'Jarvis-Web/backend/face_privacy.py',
+    'Jarvis-Web/tests/test_face_privacy.py',
     'Jarvis-Web/frontend/app.js',
     'Jarvis-Web/frontend/index.html',
     'Jarvis-Web/frontend/style.css',

@@ -17,6 +17,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from PIL import Image, ImageDraw
+from face_privacy import FacePrivacy, PrivacyUnavailable
+
+FACE_BLUR_ENABLED = False  # Paused at the user's request.
+IMAGE_PRIVACY_VERSION = "faces-v1" if FACE_BLUR_ENABLED else "unblurred-v1"
+FACE_PRIVACY = FacePrivacy()
+PRIVACY_HEADERS = {"Cache-Control": "private, no-store", "X-Privacy-Mode": IMAGE_PRIVACY_VERSION, "X-Content-Type-Options": "nosniff"}
 
 app = FastAPI()
 # Preserve the existing dashboard access configuration.
@@ -29,7 +35,50 @@ RUNS_DIR = JARVIS_DIR / "Masks" / "runs"
 MONITOR_DIR = JARVIS_DIR / "object_monitor" / "object_monitor"
 SAM3_SOURCE = JARVIS_DIR / "src" / "jarvis" / "vision" / "sam3_process.py"
 EVENT_TYPES = {"new_object", "object_missing", "object_returned", "person_count_changed"}
-app.mount("/runs", StaticFiles(directory=str(RUNS_DIR), check_dir=False), name="runs")
+# Keep image access allowlisted; optional face processing is currently paused.
+def privacy_response(result):
+    data, count = result
+    return Response(data, media_type="image/png",
+                    headers={**PRIVACY_HEADERS, "X-Privacy-Mode": "faces-v1" if FACE_BLUR_ENABLED else "unblurred-v1", "X-Faces-Blurred": str(count)})
+
+
+def privacy_image_response(canvas, original):
+    if not FACE_BLUR_ENABLED:
+        output = BytesIO()
+        canvas.save(output, format="PNG")
+        return privacy_response((output.getvalue(), 0))
+    try:
+        return privacy_response(FACE_PRIVACY.render(canvas, original))
+    except PrivacyUnavailable as error:
+        raise HTTPException(503, "Image withheld: face privacy processing is unavailable",
+                            headers={"Cache-Control": "no-store"}) from error
+
+
+@app.get("/runs/{run_id}/{filename}")
+def private_capture_image(run_id: str, filename: str):
+    folder = (RUNS_DIR / run_id).resolve()
+    if folder.parent != RUNS_DIR.resolve() or not folder.is_dir():
+        raise HTTPException(404, "Capture not found")
+    if not re.fullmatch(r"(?:original|combined_overlay)\.(?:jpg|jpeg|png|webp)", filename, re.I):
+        raise HTTPException(404, "Image not found")
+    path = inside_file(folder, filename)
+    if path is None:
+        raise HTTPException(404, "Image not found")
+    if not FACE_BLUR_ENABLED:
+        return FileResponse(path, headers={**PRIVACY_HEADERS, "X-Faces-Blurred": "0"})
+    manifest = run_manifest(folder)
+    original = inside_file(folder, manifest.get("saved_original")) if manifest else None
+    if original is None:
+        original = next((p for p in (inside_file(folder, "original." + ext)
+                        for ext in ("png", "jpg", "jpeg", "webp")) if p is not None), None)
+    if original is None:
+        raise HTTPException(409, "Image withheld: its source photograph is unavailable")
+    try:
+        return privacy_response(FACE_PRIVACY.file(path, original))
+    except PrivacyUnavailable as error:
+        raise HTTPException(503, "Image withheld: face privacy processing is unavailable",
+                            headers={"Cache-Control": "no-store"}) from error
+
 app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
 
 
@@ -148,9 +197,7 @@ def filtered_overlay(run_id: str, categories: list[str] | None = Query(None)):
         draw = ImageDraw.Draw(canvas)
         for box, label, color in annotations:
             draw.text((box[0] + 4, max(2, box[1] - 14)), label, fill=color, stroke_width=2, stroke_fill=(0, 0, 0))
-        output = BytesIO()
-        canvas.save(output, format="PNG")
-        return Response(output.getvalue(), media_type="image/png", headers={"Cache-Control": "private, max-age=3600"})
+        return privacy_image_response(canvas, original)
     except (OSError, ValueError) as error:
         raise HTTPException(409, "Saved mask data could not be rendered") from error
 
@@ -211,8 +258,8 @@ def get_latest_runs(day: str | None = None, limit: int = 46):
                         "mask_categories": categories, "category_counts": counts,
                         "mask_filterable": filterable,
                         "change_log": change_log,
-                        "original": f"/runs/{folder.name}/{original}" if original else None,
-                        "overlay": f"/runs/{folder.name}/{overlay}" if overlay else None})
+                        "original": f"/runs/{folder.name}/{original}?privacy={IMAGE_PRIVACY_VERSION}" if original else None,
+                        "overlay": f"/runs/{folder.name}/{overlay}?privacy={IMAGE_PRIVACY_VERSION}" if overlay else None})
     results.sort(key=lambda run: (run["captured_at"] or "", run["folder"]), reverse=True)
     # A selected day includes every saved frame, even when manual captures
     # take it beyond the 46 scheduled pictures. The default remains bounded.
@@ -647,8 +694,6 @@ def highlight_detection(run_id: str, detection_id: int):
         box = mask.getbbox()
         if box is not None:
             draw.text((box[0] + 3, max(2, box[1] - 14)), label, fill=(255, 239, 206), stroke_width=2, stroke_fill=(0, 0, 0))
-        output = BytesIO()
-        canvas.save(output, format="PNG")
-        return Response(output.getvalue(), media_type="image/png", headers={"Cache-Control": "private, max-age=3600"})
+        return privacy_image_response(canvas, original)
     except (OSError, ValueError) as error:
         raise HTTPException(409, 'The selected mask could not be highlighted') from error

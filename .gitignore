@@ -166,3 +166,7 @@ __pycache__/
 !/Jarvis-Web/backend/server.py
 !/Jarvis-Web/tests/test_history.py
 !/Jarvis-Web/tests/test_masks.py
+
+# Face privacy source and regression checks; model files remain private.
+!/Jarvis-Web/backend/face_privacy.py
+!/Jarvis-Web/tests/test_face_privacy.py

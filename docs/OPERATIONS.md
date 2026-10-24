@@ -151,6 +151,39 @@ reports and historical counts retain their original values; no historical
 capture, event, or inventory record is rewritten by this source change.
 The website and spoken room questions consume the newly saved counts as usual.
 
+## Website face privacy
+
+**Currently disabled at the user's request.** Website images are served without
+face blurring. The implementation below is retained for future refinement.
+Set FACE_BLUR_ENABLED in Jarvis-Web/backend/server.py to control processing;
+update the frontend labels and image cache versions when enabling it again.
+
+When enabled:
+
+Website photographs, thumbnails, expanded views, saved/filtered overlays, and
+selected-object highlights are redacted on the server. OpenCV YuNet detects faces
+locally on each original photograph; expanded face regions are strongly blurred
+on every rendered view. No face recognition, identities, or embeddings are used.
+
+The former unrestricted /runs static mount is replaced by an allowlisted image
+route. Manifests, raw masks, arbitrary capture files, and backups are unavailable
+there. Images are withheld if the detector fails, the model is missing or invalid,
+or the source photograph cannot be checked. Face regions and processed images use
+bounded in-memory caches. Responses use no-store and updated image URLs avoid old
+browser cache entries. Previously saved or cached copies cannot be recalled.
+
+Originals in Footage/ and Masks/ remain private and unchanged for local analysis.
+This feature covers Jarvis-Web images, not separate camera streams, desktop image
+viewers, or host filesystem access. Automatic detection can miss small, obscured,
+or angled faces; face blur is not a guarantee of anonymity.
+
+Runtime dependencies: OpenCV with FaceDetectorYN, NumPy, Pillow, and FastAPI.
+Model: models/face-privacy/face_detection_yunet_2023mar.onnx from the official
+opencv/opencv_zoo models/face_detection_yunet directory.
+Required SHA256:
+8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4.
+The model and its license stay in the ignored models/ directory.
+
 ## Mask contour display
 
 The website renders available individual masks with a 22% transparent fill and

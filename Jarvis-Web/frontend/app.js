@@ -42,7 +42,7 @@ function imageForRun(run, mode=viewMode) {
   if(!categories.length || !run.mask_filterable)return run.original;
   return filteredMaskUrl(run,categories);
 }
-function filteredMaskUrl(run,categories) {const query=new URLSearchParams({render:'contours-v1'});if(!categories.length)query.append('categories','');else for(const category of categories)query.append('categories',category);return `/api/overlay/${encodeURIComponent(run.folder)}?${query}`;}
+function filteredMaskUrl(run,categories) {const query=new URLSearchParams({privacy:'unblurred-v1',render:'contours-v1'});if(!categories.length)query.append('categories','');else for(const category of categories)query.append('categories',category);return `/api/overlay/${encodeURIComponent(run.folder)}?${query}`;}
 function saveMaskSelection() {try{localStorage.setItem('jarvis-hidden-mask-categories',JSON.stringify([...excludedMaskCategories]));}catch{}failedImage=null;viewMode='overlay';renderDisplay();renderGallery();}
 function renderMaskControls(run) {
   const container=$('mask-category-list'), focusedCategory=document.activeElement?.dataset?.maskCategory;
@@ -86,7 +86,7 @@ function visibleDetections() {
 function selectedObject() {return visibleDetections().find(item=>item.id===selectedObjectId);}
 function displayImageUrl(run) {
   const item=run?.folder===selectedRun()?.folder?selectedObject():null;
-  return item?`/api/detections/${encodeURIComponent(run.folder)}/${item.id}/highlight?render=contours-v1`:imageForRun(run);
+  return item?`/api/detections/${encodeURIComponent(run.folder)}/${item.id}/highlight?privacy=unblurred-v1&render=contours-v1`:imageForRun(run);
 }
 async function loadInspection(run) {
   const key=run?run.folder+':'+String(run.mask_filterable):'none';

@@ -413,6 +413,14 @@ $('masks-all').onclick=()=>{for(const category of maskCategories())excludedMaskC
 $('masks-none').onclick=()=>{for(const category of maskCategories())excludedMaskCategories.add(category);saveMaskSelection();};
 $('close-dialog').onclick=()=>$('image-dialog').close();
 $('image-dialog').onclick=event=>{if(event.target===$('image-dialog')){const r=event.target.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)event.target.close();}};
+function updateDashboardNav() {
+  const section=location.hash||'#occupancy';
+  for(const link of document.querySelectorAll('.topbar nav a')){
+    const active=link.hash===section;link.classList.toggle('nav-active',active);
+    if(active)link.setAttribute('aria-current','location');else link.removeAttribute('aria-current');
+  }
+}
+window.addEventListener('hashchange',updateDashboardNav);updateDashboardNav();
 $('clear-object').onclick=()=>{selectedObjectId=null;inspectionError='';overlapIds=[];hitTicket++;failedImage=null;renderDisplay();};
 $('featured-image').onclick=async event=>{
   const run=selectedRun(),data=inspectionData;

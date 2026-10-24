@@ -216,6 +216,11 @@ def deduplicate_detections(detections, iou_threshold=0.45):
     )
 
     for detection in sorted_detections:
+        # Trust SAM3's separate person detections even when seated people overlap.
+        # The confidence filter above still applies; other classes keep deduplication.
+        if detection["prompt"] == PEOPLE_CLASS:
+            kept.append(detection)
+            continue
         duplicate = False
 
         for existing in kept:
@@ -842,6 +847,7 @@ if run_folder.is_dir():
 
     report = {
         "person_count": current_person_count,
+        "person_count_method": "sam3_score_0.50_no_overlap_filter",
         "observed_at": manifest.get("captured_at"),
         "current_capture": run_id,
         "previous_capture": previous_run_id,

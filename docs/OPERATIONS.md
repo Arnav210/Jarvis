@@ -77,3 +77,21 @@ Check failures with `journalctl --user -u jarvis-capture.service` and
 `systemctl --user enable --now jarvis-capture.timer`. Originals and generated
 masks remain private ignored runtime files. There is no automatic retention
 cleanup; monitor disk space as the archive grows.
+
+
+## People count and overlapping detections
+
+From the person-overlap update onward, `object_monitor.py` counts every SAM3
+`person` detection with a score of at least 0.50. Bounding-box overlap and
+containment do not remove person detections. Duplicate suppression still applies
+to other object categories. This deliberately trusts SAM3's separate person
+masks, including heavily overlapping boxes; genuinely duplicate person masks may
+therefore inflate the estimate.
+
+New per-capture reports record
+`person_count_method: sam3_score_0.50_no_overlap_filter`. The running watcher
+launches the monitor afresh after each successful analysis, so the next completed
+capture uses this rule without a service restart or an extra photograph. Existing
+reports and historical counts retain their original values; no historical
+capture, event, or inventory record is rewritten by this source change.
+The website and spoken room questions consume the newly saved counts as usual.

@@ -1,4 +1,12 @@
 'use strict';
+// Discourage casual image saving while preserving image inspection clicks.
+for (const eventName of ['contextmenu', 'dragstart']) {
+  document.addEventListener(eventName, event => {
+    if (event.target instanceof Element && event.target.closest('img, .image-wrapper')) {
+      event.preventDefault();
+    }
+  }, {capture: true});
+}
 const $ = id => document.getElementById(id);
 const TYPES = {
   object_missing: {label:'Object missing', tone:'missing', icon:'−'},
@@ -196,7 +204,7 @@ function renderGallery() {
     const card=el('button','capture-card');card.dataset.folder=run.folder;
     card.setAttribute('aria-pressed',String(run.folder===selectedFolder));
     card.setAttribute('aria-label',`Inspect capture ${captureText(run)}`);
-    const img=el('img');img.src=imageForRun(run)||run.original||run.overlay;img.alt='';img.loading='lazy';
+    const img=el('img');img.draggable=false;img.src=imageForRun(run)||run.original||run.overlay;img.alt='';img.loading='lazy';
     const info=el('span','capture-info');
     info.append(el('strong','',dateText(captureDate(run),{hour:'numeric',minute:'2-digit',second:'2-digit'})),el('small','',dateText(captureDate(run),{month:'short',day:'numeric',year:'numeric'})));
     if(run.folder===currentRuns[0]?.folder)info.append(el('small','new-tag','LATEST'));

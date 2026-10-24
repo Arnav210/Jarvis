@@ -275,3 +275,6 @@ dialog p {font-size:11px;color:var(--muted);margin-top:12px}
 .detection-choice.at-click{border-bottom-color:var(--accent)}
 .object-inspector-note{font-size:9px;color:var(--muted);line-height:1.7;margin-top:11px}
 @media(max-width:480px){.object-inspector{padding:14px 12px}.object-click-hint{padding-left:12px;padding-right:12px}.object-detail{gap:7px 12px}.object-detail span:last-child{flex-basis:100%}}
+
+/* Keep native image-save gestures off the capture views. */
+img { -webkit-touch-callout: none; -webkit-user-drag: none; user-select: none; }

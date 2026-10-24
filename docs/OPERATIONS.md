@@ -79,6 +79,18 @@ masks remain private ignored runtime files. There is no automatic retention
 cleanup; monitor disk space as the archive grows.
 
 
+### Website capture status
+
+The live capture-status panel reads systemd timer/service state and saved pictures
+without opening the webcam. It displays the next actual timer trigger, the last
+picture's analysis, and today's scheduled-slot progress separately from other
+pictures. A picture within the minute after a scheduled slot satisfies that slot;
+misses before the timer was enabled are excluded. Missing captures have a
+one-minute grace period, and incomplete analysis is flagged after 15 minutes.
+Unknown scheduler state is displayed as unavailable. The panel always describes
+today's live system, even when the gallery is displaying a historical date.
+
+
 ## People count and overlapping detections
 
 From the person-overlap update onward, `object_monitor.py` counts every SAM3

@@ -1,5 +1,7 @@
 """History regression checks against isolated temporary files only."""
 import importlib.util
+import sys
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[1] / "backend"))
 import json
 from pathlib import Path
 import tempfile
@@ -192,3 +194,139 @@ class DailyCaptureTests(unittest.TestCase):
         for day in ["2026-02-30", "20261022", "bad-date"]:
             with self.assertRaises(server.HTTPException):
                 server.get_latest_runs(day)
+
+
+class CaptureStatusTests(unittest.TestCase):
+    def setUp(self):
+        from unittest.mock import patch
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.root = Path(self.directory.name)
+        self.footage = self.root / 'Footage'
+        self.runs = self.root / 'runs'
+        self.footage.mkdir()
+        self.runs.mkdir()
+        unit = Path(__file__).resolve().parents[2] / 'systemd/user/jarvis-capture.timer'
+        self.expressions = [line.split('=', 1)[1] for line in unit.read_text().splitlines() if line.startswith('OnCalendar=')]
+        self.runtime = {
+            'jarvis-capture.timer': {'ActiveState': 'active', 'calendar': self.expressions, 'NextElapseUSecRealtime': 'Fri 2026-10-23 08:20:00 PDT'},
+            'jarvis-capture.service': {'ActiveState': 'inactive', 'Result': 'success'},
+            'jarvis-sam3.service': {'ActiveState': 'active'}}
+        active_zone = patch.dict(server.os.environ, {'TZ': 'America/Los_Angeles'})
+        active_zone.start()
+        self.addCleanup(active_zone.stop)
+
+    def photo(self, stamp, count=None):
+        value = server.datetime.fromisoformat(stamp)
+        name = value.strftime('%Y-%m-%d_%H-%M-%S_%f')
+        (self.footage / (name + '.jpg')).write_bytes(b'synthetic')
+        if count is not None:
+            folder = self.runs / name
+            folder.mkdir()
+            (folder / 'changes.json').write_text(json.dumps({'person_count': count}))
+
+    def status(self, stamp):
+        return server.build_capture_status(server.datetime.fromisoformat(stamp), self.runtime, self.footage, self.runs)
+
+    def test_weekends_have_no_slots_or_missing_picture_alerts(self):
+        for stamp in ("2026-10-24T12:00:00-07:00", "2026-10-25T12:00:00-07:00",
+                      "2026-11-01T12:00:00-08:00"):
+            with self.subTest(stamp=stamp):
+                data = self.status(stamp)
+                self.assertEqual(data['state'], 'outside_hours')
+                self.assertEqual(data['planned_today'], 0)
+                self.assertEqual(data['missed_today'], 0)
+                self.assertIn('Weekend', data['message'])
+
+    def test_schedule_has_46_slots_with_inclusive_endpoints(self):
+        slots, zone = server.capture_slots(server.date(2026, 10, 23), self.expressions)
+        self.assertEqual(len(slots), 46)
+        self.assertEqual(slots[0].strftime('%H:%M'), '08:10')
+        self.assertEqual(slots[-1].strftime('%H:%M'), '15:40')
+        self.assertEqual(zone, 'America/Los_Angeles')
+
+    def test_waiting_with_completed_zero_count(self):
+        self.photo('2026-10-23T08:10:00-07:00', 0)
+        data = self.status('2026-10-23T08:15:00-07:00')
+        self.assertEqual(data['state'], 'waiting')
+        self.assertEqual(data['analysis'], 'complete')
+        self.assertEqual(data['people_count'], 0)
+        self.assertEqual(data['captured_today'], 1)
+        self.assertEqual(data['processed_today'], 1)
+        self.assertEqual(data['missed_today'], 0)
+        self.assertEqual(data['next_capture'], '2026-10-23T08:20:00-07:00')
+
+    def test_pending_analysis_and_delayed_analysis(self):
+        self.photo('2026-10-23T08:10:00-07:00')
+        self.assertEqual(self.status('2026-10-23T08:12:00-07:00')['state'], 'processing')
+        data = self.status('2026-10-23T08:30:00-07:00')
+        self.assertEqual(data['state'], 'problem')
+        self.assertEqual(data['analysis'], 'delayed')
+
+    def test_missing_capture_has_a_one_minute_grace_period(self):
+        self.assertEqual(self.status('2026-10-23T08:10:30-07:00')['state'], 'waiting')
+        self.assertEqual(self.status('2026-10-23T08:12:00-07:00')['state'], 'problem')
+
+    def test_manual_photos_do_not_inflate_slot_progress(self):
+        self.photo('2026-10-23T08:10:00-07:00', 2)
+        self.photo('2026-10-23T08:10:30-07:00', 2)
+        self.photo('2026-10-23T08:14:00-07:00', 3)
+        data = self.status('2026-10-23T08:15:00-07:00')
+        self.assertEqual(data['captured_today'], 1)
+        self.assertEqual(data['other_pictures_today'], 2)
+
+    def test_outside_hours_and_setup_day_do_not_report_missed_slots(self):
+        self.runtime['enabled_since'] = '2026-10-23T22:00:00-07:00'
+        data = self.status('2026-10-23T23:00:00-07:00')
+        self.assertEqual(data['state'], 'outside_hours')
+        self.assertEqual(data['missed_today'], 0)
+
+    def test_paused_or_unavailable_scheduler_never_claims_healthy(self):
+        self.runtime['jarvis-capture.timer']['ActiveState'] = 'inactive'
+        data = self.status('2026-10-23T08:15:00-07:00')
+        self.assertEqual(data['state'], 'paused')
+        self.assertIsNone(data['next_capture'])
+        self.runtime.clear()
+        self.assertEqual(self.status('2026-10-23T08:15:00-07:00')['state'], 'unavailable')
+
+    def test_stopped_watcher_and_failed_capture_are_problems(self):
+        self.runtime['jarvis-sam3.service']['ActiveState'] = 'inactive'
+        self.assertEqual(self.status('2026-10-23T08:15:00-07:00')['state'], 'problem')
+        self.runtime['jarvis-sam3.service']['ActiveState'] = 'active'
+        self.photo('2026-10-23T08:10:00-07:00', 2)
+        self.runtime['jarvis-capture.service']['Result'] = 'exit-code'
+        self.assertEqual(self.status('2026-10-23T08:15:00-07:00')['state'], 'problem')
+
+    def test_pacific_midnight_resets_daily_progress(self):
+        self.photo('2026-10-22T15:40:00-07:00', 4)
+        data = self.status('2026-10-23T07:01:00+00:00')
+        self.assertEqual(data['captured_today'], 0)
+        self.assertEqual(data['state'], 'outside_hours')
+
+
+    def test_older_pending_analysis_is_not_hidden_by_a_newer_success(self):
+        self.photo('2026-10-23T08:10:00-07:00')
+        self.photo('2026-10-23T08:20:00-07:00', 3)
+        data = self.status('2026-10-23T08:27:00-07:00')
+        self.assertEqual(data['state'], 'problem')
+        self.assertEqual(data['analysis'], 'complete')
+        self.assertEqual(data['captured_today'], 2)
+        self.assertEqual(data['processed_today'], 1)
+
+    def test_unrecognized_timer_rule_is_unavailable(self):
+        self.runtime['jarvis-capture.timer']['calendar'] = ['Mon..Fri *:00:00']
+        self.assertEqual(self.status('2026-10-23T08:15:00-07:00')['state'], 'unavailable')
+
+    def test_runtime_query_is_read_only_cached_and_fails_closed(self):
+        from unittest.mock import patch
+        text = 'TimersCalendar={ OnCalendar=' + self.expressions[0] + ' ; next_elapse=n/a }\nId=jarvis-capture.timer\nActiveState=active\n'
+        result = server.subprocess.CompletedProcess([], 0, stdout=text, stderr='')
+        with patch.object(server, '_runtime_cache', (0, {})), patch.object(server.subprocess, 'run', return_value=result) as run:
+            first = server.capture_runtime()
+            self.assertEqual(first['jarvis-capture.timer']['calendar'], self.expressions[:1])
+            self.assertEqual(first, server.capture_runtime())
+            self.assertEqual(run.call_count, 1)
+            self.assertIn('show', run.call_args.args[0])
+            self.assertNotIn('start', run.call_args.args[0])
+        with patch.object(server, '_runtime_cache', (0, {})), patch.object(server.subprocess, 'run', side_effect=server.subprocess.TimeoutExpired('systemctl', 3)):
+            self.assertEqual(server.capture_runtime(), {})

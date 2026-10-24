@@ -6,6 +6,9 @@ import ast
 from io import BytesIO
 import json
 import os
+import re
+import subprocess
+import time as clock_time
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query
@@ -371,3 +374,167 @@ if __name__ == "__main__":
     import uvicorn
     uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=True,
                 app_dir=str(BASE_DIR / "backend"), reload_dirs=[str(BASE_DIR)])
+
+
+# Read-only scheduler telemetry; cache process queries across browser polls.
+_runtime_cache = (0, {})
+
+
+def capture_runtime():
+    global _runtime_cache
+    tick = clock_time.monotonic()
+    if tick - _runtime_cache[0] < 10:
+        return _runtime_cache[1]
+    units = {}
+    try:
+        result = subprocess.run([
+            "systemctl", "--user", "show", "jarvis-capture.timer",
+            "jarvis-capture.service", "jarvis-sam3.service",
+            "--property=Id,ActiveState,Result,NextElapseUSecRealtime,TimersCalendar"
+        ], capture_output=True, text=True, timeout=3, check=True)
+        for block in result.stdout.strip().split("\n\n"):
+            unit = {"calendar": []}
+            for line in block.splitlines():
+                key, _, value = line.partition("=")
+                if key == "TimersCalendar":
+                    match = re.search(r"OnCalendar=(.*?) ; next_elapse=", value)
+                    if match:
+                        unit["calendar"].append(match.group(1).strip())
+                else:
+                    unit[key] = value
+            if unit.get("Id"):
+                units[unit["Id"]] = unit
+        link = Path.home() / ".config/systemd/user/timers.target.wants/jarvis-capture.timer"
+        if link.is_symlink():
+            units["enabled_since"] = datetime.fromtimestamp(link.lstat().st_mtime, timezone.utc).isoformat()
+    except (OSError, subprocess.SubprocessError):
+        units = {}
+    _runtime_cache = (tick, units)
+    return units
+
+
+def capture_slots(day, expressions):
+    """Expand the supported daily timer rules; never guess an unknown schedule."""
+    slots, zone_name = set(), None
+    for expression in expressions:
+        match = re.fullmatch(r"(?:(Mon\.\.Fri) )?\*-\*-\* (\d{2}(?:\.\.\d{2})?):([\d,/]+):00 ([A-Za-z_]+/[A-Za-z_/]+)", expression)
+        if not match:
+            raise ValueError("Unsupported capture timer rule")
+        weekdays, hours, minutes, name = match.groups()
+        if zone_name and zone_name != name:
+            raise ValueError("Capture timer timezones disagree")
+        zone_name = name
+        zone = ZoneInfo(name)
+        if ".." in hours:
+            first, last = map(int, hours.split(".."))
+            hours = range(first, last + 1)
+        else:
+            hours = [int(hours)]
+        if "/" in minutes:
+            first, step = map(int, minutes.split("/"))
+            if not 1 <= step <= 60:
+                raise ValueError("Invalid timer interval")
+            minutes = range(first, 60, step)
+        else:
+            minutes = [int(value) for value in minutes.split(",")]
+        if weekdays and day.weekday() >= 5:
+            continue
+        for hour in hours:
+            for minute in minutes:
+                slots.add(datetime.combine(day, time(hour, minute), zone))
+    if zone_name is None:
+        raise ValueError("No capture schedule")
+    return sorted(slots), zone_name
+
+
+def status_stamp(value, zone):
+    if not isinstance(value, str):
+        return None
+    try:
+        stamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return stamp.replace(tzinfo=zone) if stamp.tzinfo is None else stamp.astimezone(zone)
+    except ValueError:
+        match = re.search(r"(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})", value)
+        return datetime.fromisoformat("T".join(match.groups())).replace(tzinfo=zone) if match else None
+
+
+def build_capture_status(now, runtime, footage_dir, runs_dir):
+    timer = runtime.get("jarvis-capture.timer", {})
+    zone, zone_name = room_timezone()
+    try:
+        expressions = timer.get("calendar", [])
+        if expressions:
+            zone = ZoneInfo(expressions[0].split()[-1])
+        now = now.astimezone(zone)
+        slots, zone_name = capture_slots(now.date(), expressions)
+    except (ValueError, KeyError):
+        return {"state": "unavailable", "message": "The capture schedule could not be verified.",
+                "checked_at": now.isoformat(), "timezone": zone_name}
+    photos = []
+    try:
+        for path in footage_dir.iterdir():
+            if path.suffix.lower() not in (".jpg", ".jpeg") or not path.is_file() or not path.stat().st_size:
+                continue
+            stamp = None
+            for pattern in ("%Y-%m-%d_%H-%M-%S_%f", "%Y-%m-%d_%H-%M-%S", "%Y-%m-%d-%H_%M_%S"):
+                try:
+                    stamp = datetime.strptime(path.stem, pattern).replace(tzinfo=zone)
+                    break
+                except ValueError:
+                    pass
+            if stamp is not None and stamp <= now:
+                report = saved_json(runs_dir / path.stem / "changes.json")
+                count = person_count(report.get("person_count"))
+                photos.append({"time": stamp, "count": count, "complete": count is not None})
+    except OSError:
+        return {"state": "unavailable", "message": "The saved picture archive could not be checked.",
+                "checked_at": now.isoformat(), "timezone": zone_name}
+    photos.sort(key=lambda photo: photo["time"])
+    today = [photo for photo in photos if photo["time"].date() == now.date()]
+    # Match one picture during the minute after each scheduled trigger. Extra
+    # manual pictures do not inflate scheduled-slot progress.
+    matched = [(slot, next((photo for photo in today if slot <= photo["time"] < slot + timedelta(minutes=1)), None)) for slot in slots]
+    enabled_since = status_stamp(runtime.get("enabled_since"), zone)
+    due = [(slot, photo) for slot, photo in matched if slot + timedelta(minutes=1) <= now and (enabled_since is None or slot >= enabled_since)]
+    missed = sum(photo is None for _, photo in due)
+    latest = photos[-1] if photos else None
+    analysis = "none"
+    if latest:
+        analysis = "complete" if latest["complete"] else "delayed" if now - latest["time"] > timedelta(minutes=15) else "processing"
+    delayed_slots = any(photo and not photo["complete"] and now - photo["time"] > timedelta(minutes=15) for _, photo in matched)
+    within_hours = bool(slots) and slots[0] <= now < slots[-1] + timedelta(minutes=1)
+    watcher = runtime.get("jarvis-sam3.service", {}).get("ActiveState")
+    capture = runtime.get("jarvis-capture.service", {})
+    state, message = "waiting", "Waiting for the next scheduled picture."
+    if timer.get("ActiveState") != "active":
+        state, message = "paused", "Automatic capture is paused."
+    elif not slots:
+        state, message = "outside_hours", "Weekend photography is disabled. Capture resumes Monday."
+    elif watcher != "active":
+        state, message = "problem", "Picture analysis is not running."
+    elif analysis == "delayed" or delayed_slots:
+        state, message = "problem", "A saved picture has waited over 15 minutes for analysis."
+    elif capture.get("ActiveState") == "activating":
+        state, message = "capturing", "Taking the scheduled picture."
+    elif within_hours and (missed or capture.get("Result", "success") != "success"):
+        state, message = "problem", "A scheduled picture is missing or the last capture failed."
+    elif analysis == "processing":
+        state, message = "processing", "Picture saved; waiting for its people-count analysis."
+    elif not within_hours:
+        state, message = "outside_hours", "Outside scheduled capture hours."
+    next_stamp = status_stamp(timer.get("NextElapseUSecRealtime"), zone) if timer.get("ActiveState") == "active" else None
+    return {"state": state, "message": message, "checked_at": now.isoformat(),
+            "timezone": zone_name, "window_start": slots[0].isoformat() if slots else None, "window_end": slots[-1].isoformat() if slots else None,
+            "schedule_days": "Monday-Friday" if all(e.startswith("Mon..Fri ") for e in expressions) else "Every day",
+            "next_capture": next_stamp.isoformat() if next_stamp else None,
+            "last_capture": latest["time"].isoformat() if latest else None,
+            "analysis": analysis, "people_count": latest["count"] if latest else None,
+            "planned_today": len(slots), "captured_today": sum(photo is not None for _, photo in matched),
+            "processed_today": sum(photo is not None and photo["complete"] for _, photo in matched),
+            "other_pictures_today": len(today) - sum(photo is not None for _, photo in matched),
+            "missed_today": missed}
+
+
+@app.get("/api/capture-status")
+def get_capture_status():
+    return build_capture_status(datetime.now(timezone.utc), capture_runtime(), JARVIS_DIR / "Footage", RUNS_DIR)

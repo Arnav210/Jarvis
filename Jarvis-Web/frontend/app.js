@@ -275,7 +275,41 @@ async function fetchMonitor() {
   }finally{monitorLoading=false;updateFreshness();}
 }
 
-async function refresh(){const button=$('refresh-btn');button.disabled=true;try{await Promise.all([fetchMonitor(),fetchMaskCategories(),fetchOccupancy()]);await fetchRuns();}finally{button.disabled=false;}}
+function captureStatusTime(stamp, zone, includeDay=false) {
+  if(!stamp)return '—';
+  const date=new Date(stamp);if(isNaN(date))return '—';
+  return date.toLocaleString(undefined,{timeZone:zone,hour:'numeric',minute:'2-digit',...(includeDay?{month:'short',day:'numeric'}:{})});
+}
+async function fetchCaptureStatus() {
+  const panel=$('capture-status-state');
+  try{
+    const response=await fetch('/api/capture-status',{cache:'no-store',signal:AbortSignal.timeout(8000)});
+    if(!response.ok)throw Error('Capture status unavailable');
+    const data=await response.json();
+    const labels={waiting:'On schedule',capturing:'Taking picture',processing:'Processing',problem:'Needs attention',outside_hours:'Outside capture hours',paused:'Paused',unavailable:'Status unavailable'};
+    if(!labels[data.state])throw Error('Invalid capture status');
+    const zone=data.timezone||'America/Los_Angeles';
+    panel.textContent=labels[data.state];panel.dataset.state=data.state;
+    $('capture-status-message').textContent=data.message;
+    $('capture-status-last').textContent=data.state==='unavailable'?'—':data.last_capture?captureStatusTime(data.last_capture,zone,true):'No saved picture';
+    const analysis=data.analysis==='complete'?`Complete · ${data.people_count} ${data.people_count===1?'person':'people'} detected`:data.analysis==='processing'?'Waiting for analysis':data.analysis==='delayed'?'Analysis delayed':'No analysis yet';
+    $('capture-status-analysis').textContent=data.state==='unavailable'?'—':analysis;
+    $('capture-status-next').textContent=data.next_capture?captureStatusTime(data.next_capture,zone,true):data.state==='paused'?'Schedule paused':'Unavailable';
+    const progress=Number.isInteger(data.planned_today);
+    $('capture-status-progress').textContent=progress?`${data.captured_today} / ${data.planned_today} taken`:'—';
+    $('capture-status-meter').hidden=!progress||data.planned_today===0;if(progress){$('capture-status-meter').max=data.planned_today;$('capture-status-meter').value=data.captured_today;}
+    $('capture-status-processed').textContent=progress?`${data.processed_today} analyzed${data.missed_today?` · ${data.missed_today} missed`:''}${data.other_pictures_today?` · ${data.other_pictures_today} other photos`:''}`:'';
+    $('capture-status-window').textContent=data.window_start?`${captureStatusTime(data.window_start,zone)}–${captureStatusTime(data.window_end,zone)} · ${zone.replaceAll('_',' ')} · ${data.schedule_days||'Every day'}`:data.planned_today===0?`No photographs on weekends · ${zone.replaceAll('_',' ')}`:'Schedule unavailable';
+    $('capture-status-checked').textContent='Checked '+captureStatusTime(data.checked_at,zone);
+  }catch{
+    panel.textContent='Status unavailable';panel.dataset.state='unavailable';
+    $('capture-status-message').textContent='Capture status could not be checked. Retrying automatically.';
+    for(const id of ['last','analysis','next','progress'])$('capture-status-'+id).textContent='—';
+    $('capture-status-processed').textContent='';$('capture-status-meter').hidden=true;$('capture-status-window').textContent='Schedule unavailable';$('capture-status-checked').textContent='Connection lost';
+  }
+}
+
+async function refresh(){const button=$('refresh-btn');button.disabled=true;try{await Promise.all([fetchMonitor(),fetchMaskCategories(),fetchOccupancy(),fetchCaptureStatus()]);await fetchRuns();}finally{button.disabled=false;}}
 async function poll(){if(!document.hidden)await refresh();setTimeout(poll,5000);}
 $('refresh-btn').onclick=refresh;
 $('original-btn').onclick=()=>setView('original');$('overlay-btn').onclick=()=>setView('overlay');

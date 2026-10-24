@@ -9,3 +9,26 @@
 .chart-mobile-hint{display:none}@media(max-width:760px){.chart-mobile-hint{display:block;color:var(--muted);font-size:10px;padding:4px 18px 15px}}
 
 .gallery-day-controls{gap:5px;margin-bottom:10px}.gallery-day-controls input{max-width:145px;min-width:0}.gallery-day-controls .button{padding:8px;min-width:30px}.gallery-day-controls label{min-width:0}
+
+/* Capture health: a narrow, readable instrument column */
+.capture-status-panel {padding:22px}
+.capture-status-heading {display:flex;flex-direction:column;align-items:start;gap:13px}
+.capture-status-heading .eyebrow {margin-bottom:7px}
+.capture-status-heading h2 {font-family:"Segoe UI",sans-serif;font-size:17px;font-weight:500;letter-spacing:-.3px}
+.capture-status-pill {font:9px var(--mono);color:#b1c2b8;border-left:2px solid #718779;padding:2px 0 2px 8px;line-height:1.6}
+.capture-status-pill[data-state=waiting] {color:#c9ed9b;border-left-color:#a0c478}
+.capture-status-pill[data-state=problem],.capture-status-pill[data-state=unavailable],.capture-status-pill[data-state=paused] {color:#dfb896;border-left-color:#c2946a}
+.capture-status-pill[data-state=processing],.capture-status-pill[data-state=capturing] {color:#b9d3f5;border-left-color:#8caed8}
+.capture-status-message {font-size:11px;color:var(--muted);line-height:1.7;margin:11px 0 13px}
+.capture-status-grid {display:grid;grid-template-columns:1fr;gap:0}
+.capture-status-grid>div {padding:11px 0;border-top:1px solid var(--line);min-width:0}
+.capture-status-grid span {font:9px var(--mono);color:var(--muted);display:block;margin-bottom:6px}
+.capture-status-grid strong {font-size:12px;font-weight:500;display:block;line-height:1.6;overflow-wrap:anywhere}
+#capture-status-next {color:var(--accent)}
+.capture-status-grid small {display:block;font-size:9px;color:var(--muted);line-height:1.7;margin-top:5px}
+#capture-status-meter {display:block;width:100%;height:3px;margin-top:10px;border:0;background:#29373d;accent-color:var(--accent)}
+#capture-status-meter::-webkit-progress-bar {background:#29373d}
+#capture-status-meter::-webkit-progress-value {background:var(--accent)}
+#capture-status-meter::-moz-progress-bar {background:var(--accent)}
+.capture-status-footer {border-top:1px solid var(--line);padding-top:12px;margin-top:3px;font:8px/1.8 var(--mono);color:var(--muted)}
+.capture-status-footer p+p {margin-top:4px}

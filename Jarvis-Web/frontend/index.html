@@ -9,7 +9,7 @@
   <a class="skip-link" href="#main">Skip to room occupancy</a>
   <header class="topbar">
     <a class="brand" href="/" aria-label="Jarvis home"><span class="brand-mark">J.</span><span>JARVIS<small>ROOM INTELLIGENCE</small></span></a>
-    <nav aria-label="Dashboard sections"><a href="#occupancy" class="nav-active">Occupancy</a><a href="#captures">Captures</a></nav>
+    <nav aria-label="Dashboard sections"><a href="#occupancy" class="nav-active">Occupancy</a><a href="#capture-status">Capture status</a><a href="#captures">Captures</a></nav>
     <span class="connection"><span id="status-dot" class="dot"></span><span id="status-badge" role="status">Connecting</span></span>
   </header>
   <main id="main">
@@ -21,6 +21,17 @@
       <div class="stat missing"><span><i class="stat-icon">−</i>Missing objects</span><strong id="objects-missing">N/A</strong><small>Feature not available yet</small></div>
       <div class="stat people"><span><i class="stat-icon">◉</i>People last observed</span><strong id="people-count">—</strong><small id="people-observed-at">Waiting for an observation time</small></div>
       <div class="stat"><span><i class="stat-icon">↗</i>Peak on selected day</span><strong id="occupancy-peak">—</strong><small id="occupancy-total">No daily observations loaded</small></div>
+    </section>
+    <section id="capture-status" class="panel capture-status-panel" aria-labelledby="capture-status-title">
+      <div class="capture-status-heading"><div><p class="eyebrow">02 / CAPTURE HEALTH</p><h2 id="capture-status-title">Capture schedule</h2></div><span id="capture-status-state" class="capture-status-pill" role="status">Checking…</span></div>
+      <p id="capture-status-message" class="capture-status-message">Checking the camera schedule and saved analysis.</p>
+      <div class="capture-status-grid">
+        <div><span>Last picture</span><strong id="capture-status-last">—</strong></div>
+        <div><span>Analysis</span><strong id="capture-status-analysis">—</strong></div>
+        <div><span>Next picture</span><strong id="capture-status-next">—</strong></div>
+        <div><span>Today’s schedule</span><strong id="capture-status-progress">—</strong><progress id="capture-status-meter" max="46" value="0" aria-label="Scheduled picture progress" hidden></progress><small id="capture-status-processed"></small></div>
+      </div>
+      <div class="capture-status-footer"><p id="capture-status-window">Schedule unavailable</p><p id="capture-status-checked">Waiting for status</p></div>
     </section>
     <section id="occupancy" class="panel occupancy-panel" aria-labelledby="occupancy-title">
       <div class="panel-heading"><div><p class="eyebrow">01 / PEOPLE OVER 24 HOURS</p><h2 id="occupancy-title">A day in the room.</h2></div><div class="day-controls"><button id="previous-day" class="button" aria-label="Previous day">←</button><label><span class="sr-only">Observation date</span><input id="occupancy-date" type="date" aria-label="Observation date"></label><button id="next-day" class="button" aria-label="Next day">→</button><button id="today-btn" class="button">Today</button></div></div>

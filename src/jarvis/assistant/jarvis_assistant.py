@@ -26,6 +26,7 @@ from pathlib import Path
 from jarvis.music.jarvis_music import MusicError, parse_voice as parse_local_music, perform as perform_local_music
 from jarvis.ui.jarvis_status import emit as status_emit
 from jarvis.ui.jarvis_status import attention as status_attention
+from jarvis.assistant.room_info import intent as room_info_intent, answer as room_info_answer
 from jarvis.assistant.mission_briefing import is_briefing_request, present as present_briefing
 from jarvis.ui.jarvis_ironman import is_request as is_ironman_request, run_show as run_ironman_show
 from jarvis.ui.jarvis_birthday import is_request as is_birthday_request, present as present_birthday, disable as disable_birthday
@@ -388,6 +389,9 @@ def route(transcript: str) -> None:
         captains_log_command("stop")
     elif bool(state.get("paused", False)):
         print("Jarvis is paused; command ignored. Say 'resume Jarvis' after the wake word.")
+    elif (room_request := room_info_intent(transcript)) is not None:
+        status_emit("action", "Reading saved room observations from the dashboard.")
+        speak(room_info_answer(room_request))
     elif is_briefing_request(text):
         present_briefing(speak, status_emit)
     elif re.fullmatch(r'(?:hey )?(?:jarvis )?(?:disable|deactivate) (?:the )?birthday protocol',text):
@@ -483,7 +487,7 @@ def route(transcript: str) -> None:
     elif re.search(r"\b(good evening)\b", text):
         speak("Good evening. All systems are standing by.")
     elif re.search(r"\b(what can you do|help|commands)\b", text):
-        speak("I can give the daily mission briefing, answer questions, inspect folder sizes and free disk space, find files, check memory and CPU load, report service status, use the camera, open the latest saved or masked image, play a Halloween ASCII show, control local music, repeat my last message, and switch audio modes.")
+        speak("I can report the latest recorded people count, today's peak occupancy and busiest observation, the last capture time, and how many captures were analyzed today. I can also give the daily mission briefing, answer questions, inspect folder sizes and free disk space, find files, check memory and CPU load, report service status, use the camera, open the latest saved or masked image, play a Halloween ASCII show, control local music, repeat my last message, and switch audio modes.")
     elif re.search(r"\b(hello|hi|good morning|good afternoon|good evening)\b", text):
         greeting = f"Hello, {SPEAKER}." if SPEAKER != "Unknown" else "Hello."
         speak(f"{greeting} Jarvis is online and ready.")

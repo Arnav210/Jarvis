@@ -91,6 +91,38 @@ Unknown scheduler state is displayed as unavailable. The panel always describes
 today's live system, even when the gallery is displaying a historical date.
 
 
+## Spoken room information
+
+The local assistant recognizes these read-only questions before generic AI or
+music handling:
+
+- How many people are in the room?
+- What was today's highest occupancy?
+- When was the room busiest?
+- When was the last picture taken?
+- How many pictures were analyzed today?
+
+`src/jarvis/assistant/room_info.py` reads `/api/occupancy` and
+`/api/capture-status` from the existing dashboard. Its default base URL is
+`http://100.116.50.193:8000`; override `JARVIS_ROOM_API_URL` in the assistant's
+environment if the dashboard moves. It bypasses HTTP proxies, uses a three-second
+request timeout and limits response size. The dashboard must be running and
+reachable; this feature does not start it or change its access policies.
+
+Answers use the backend's room timezone, report capture/observation time, and
+qualify counts as estimates. Latest counts older than fifteen minutes are
+explicitly described as old. Empty days are unknown, not zero. Daily peaks are
+computed from valid saved observations for the current room day; tied peaks use
+the first observed time and mention the tie. Analysis totals count saved captures
+with a completed people-count observation, including manual captures, rather
+than counting change events or scheduled slots. Partial history is identified.
+Dashboard failures produce an unavailable-data answer rather than AI guessing.
+No capture, recording, dashboard control, or mask modification is performed.
+
+`bin/jarvis-listen` launches the assistant router for each transcript, so these
+source updates apply on the next command without restarting the microphone or
+camera services. Silent regression coverage is in `tests/unit_room_info.py`.
+
 ## People count and overlapping detections
 
 From the person-overlap update onward, `object_monitor.py` counts every SAM3

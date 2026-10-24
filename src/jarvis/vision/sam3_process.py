@@ -42,6 +42,8 @@ prompts = [
     "phone",
     "monitor",
     "chair",
+    "mac mini",
+
 ]
 
 

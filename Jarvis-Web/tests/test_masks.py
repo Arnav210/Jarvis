@@ -116,3 +116,90 @@ class MaskTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class InspectionTests(unittest.TestCase):
+    setUp = MaskTests.setUp
+    save_manifest = MaskTests.save_manifest
+
+    def test_metadata_has_stable_frame_ids_and_detection_scores(self):
+        data = server.get_detections('synthetic')
+        self.assertEqual((data['width'], data['height']), (100, 80))
+        self.assertEqual([d['id'] for d in data['detections']], [0, 1])
+        self.assertEqual(data['detections'][0]['score'], .9)
+        self.assertEqual(data['detections'][0]['number'], 1)
+        self.assertTrue(all(d['mask_available'] for d in data['detections']))
+
+    def test_hit_uses_mask_pixels_instead_of_bounding_box(self):
+        self.assertEqual(server.hit_detection('synthetic', 49, 79, None)['selected_id'], 0)
+        mask = Image.open(self.run / 'raw_masks/person_0.png').convert('L')
+        mask.paste(0, (20, 30, 30, 50));mask.save(self.run / 'raw_masks/person_0.png')
+        self.assertIsNone(server.hit_detection('synthetic', 25, 40, None)['selected_id'])
+
+    def test_overlap_prefers_smaller_object_and_preserves_all_hits(self):
+        self.manifest['detections'][1]['box'] = [10, 10, 20, 20]
+        self.save_manifest()
+        mask = Image.new('L', (100, 80));mask.paste(255, (8, 8, 22, 22));mask.save(self.run / 'raw_masks/phone_0.png')
+        data = server.hit_detection('synthetic', 15, 15, None)
+        self.assertEqual(data['selected_id'], 1)
+        self.assertEqual(data['hit_ids'], [1, 0])
+
+    def test_hit_respects_hidden_categories_and_empty_selection(self):
+        self.assertIsNone(server.hit_detection('synthetic', 20, 40, ['phone'])['selected_id'])
+        self.assertIsNone(server.hit_detection('synthetic', 20, 40, [''])['selected_id'])
+        with self.assertRaises(HTTPException):
+            server.hit_detection('synthetic', 20, 40, ['invented'])
+
+    def test_highlight_follows_mask_without_drawing_box(self):
+        mask = Image.new("L", (100, 80))
+        mask.paste(255, (20, 25, 35, 70))
+        mask.paste(255, (20, 55, 80, 70))
+        mask.save(self.run / "raw_masks/person_0.png")
+        self.manifest["detections"][0]["box"] = [20, 25, 80, 70]
+        self.save_manifest()
+        response = server.highlight_detection("synthetic", 0)
+        image = Image.open(BytesIO(response.body)).convert("RGB")
+        self.assertEqual(image.getpixel((34, 45)), (235, 216, 174))
+        self.assertEqual(image.getpixel((80, 40)), (37, 37, 37))
+
+    def test_highlight_dims_background_and_preserves_source_files(self):
+        original = (self.run / 'original.png').read_bytes()
+        mask = (self.run / 'raw_masks/person_0.png').read_bytes()
+        response = server.highlight_detection('synthetic', 0)
+        image = Image.open(BytesIO(response.body)).convert('RGB')
+        self.assertLess(image.getpixel((70, 40))[0], 50)
+        self.assertGreater(image.getpixel((20, 40))[0], 100)
+        self.assertEqual(original, (self.run / 'original.png').read_bytes())
+        self.assertEqual(mask, (self.run / 'raw_masks/person_0.png').read_bytes())
+
+    def test_traversal_and_outside_coordinates_are_rejected(self):
+        with self.assertRaises(HTTPException):
+            server.get_detections('..')
+        for x, y in [(-1, 0), (100, 40), (20, 80)]:
+            with self.assertRaises(HTTPException) as error:
+                server.hit_detection('synthetic', x, y, None)
+            self.assertEqual(error.exception.status_code, 400)
+        with self.assertRaises(HTTPException):
+            server.highlight_detection('synthetic', -1)
+        self.manifest['detections'][0]['raw_mask'] = '../../outside.png';self.save_manifest()
+        self.assertFalse(server.get_detections('synthetic')['detections'][0]['mask_available'])
+        with self.assertRaises(HTTPException):
+            server.highlight_detection('synthetic', 0)
+
+    def test_missing_legacy_manifest_and_mismatched_mask_are_unavailable(self):
+        Image.new('L', (3, 3), 255).save(self.run / 'raw_masks/person_0.png')
+        with self.assertRaises(HTTPException) as error:
+            server.highlight_detection('synthetic', 0)
+        self.assertEqual(error.exception.status_code, 409)
+        (self.run / 'manifest.json').unlink()
+        with self.assertRaises(HTTPException) as error:
+            server.get_detections('synthetic')
+        self.assertEqual(error.exception.status_code, 409)
+
+    def test_invalid_boxes_and_scores_do_not_reach_the_inspector(self):
+        self.manifest['detections'][0]['score'] = float('nan')
+        self.manifest['detections'][1]['box'] = [0, 0, float('nan'), 10]
+        self.save_manifest()
+        data = server.get_detections('synthetic')['detections']
+        self.assertEqual(len(data), 1)
+        self.assertIsNone(data[0]['score'])

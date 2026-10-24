@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo
 import ast
 from io import BytesIO
 import json
+import math
 import os
 import re
 import subprocess
@@ -551,3 +552,103 @@ def build_capture_status(now, runtime, footage_dir, runs_dir):
 @app.get("/api/capture-status")
 def get_capture_status():
     return build_capture_status(datetime.now(timezone.utc), capture_runtime(), JARVIS_DIR / "Footage", RUNS_DIR)
+
+
+def inspection_capture(run_id):
+    folder = (RUNS_DIR / run_id).resolve()
+    if folder.parent != RUNS_DIR.resolve() or not folder.is_dir():
+        raise HTTPException(404, "Capture not found")
+    manifest = run_manifest(folder)
+    if manifest is None:
+        raise HTTPException(409, "Individual detections are unavailable for this older capture")
+    original = inside_file(folder, manifest.get("saved_original"))
+    if original is None:
+        raise HTTPException(409, "The saved original is unavailable")
+    try:
+        with Image.open(original) as image:
+            size = image.size
+    except (OSError, ValueError) as error:
+        raise HTTPException(409, "The saved original could not be read") from error
+    detections = []
+    for ordinal, value in enumerate(manifest['detections']):
+        if not isinstance(value, dict) or not isinstance(value.get('prompt'), str):
+            continue
+        box = value.get('box')
+        if not isinstance(box, list) or len(box) != 4 or not all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) for v in box):
+            continue
+        box = [max(0, min(float(v), size[i % 2])) for i, v in enumerate(box)]
+        if box[2] <= box[0] or box[3] <= box[1]:
+            continue
+        score = value.get('score')
+        score = score if isinstance(score, (int, float)) and not isinstance(score, bool) and math.isfinite(score) and 0 <= score <= 1 else None
+        index = value.get('index', 0)
+        index = index if isinstance(index, int) and not isinstance(index, bool) and index >= 0 else ordinal
+        detections.append({'id': ordinal, 'category': value['prompt'], 'number': index + 1,
+                           'score': score, 'box': box,
+                           'mask_available': inside_file(folder, value.get('raw_mask')) is not None})
+    return folder, manifest, original, size, detections
+
+
+@app.get('/api/detections/{run_id}')
+def get_detections(run_id: str):
+    folder, manifest, original, size, detections = inspection_capture(run_id)
+    return {'run_id': run_id, 'width': size[0], 'height': size[1], 'detections': detections}
+
+
+def inspection_mask(folder, value, size):
+    path = inside_file(folder, value.get('raw_mask'))
+    if path is None:
+        raise HTTPException(409, 'The selected individual mask is unavailable')
+    try:
+        with Image.open(path) as image:
+            mask = image.convert('L').point(lambda value: 255 if value else 0)
+        if mask.size != size:
+            raise HTTPException(409, 'The saved mask dimensions do not match the picture')
+        return mask
+    except (OSError, ValueError) as error:
+        raise HTTPException(409, 'The saved mask could not be read') from error
+
+
+@app.get('/api/detections/{run_id}/hit')
+def hit_detection(run_id: str, x: int, y: int, categories: list[str] | None = Query(None)):
+    folder, manifest, original, size, detections = inspection_capture(run_id)
+    if not (0 <= x < size[0] and 0 <= y < size[1]):
+        raise HTTPException(400, 'Choose a point inside the picture')
+    requested = set(manifest_categories(manifest) if categories is None else categories)
+    if not requested.issubset(set(manifest_categories(manifest)) | set(sam3_settings()[0]) | {''}):
+        raise HTTPException(400, 'Unknown mask category')
+    hits = []
+    for detection in detections:
+        if detection['category'] not in requested or not detection['mask_available']:
+            continue
+        mask = inspection_mask(folder, manifest['detections'][detection['id']], size)
+        if mask.getpixel((x, y)):
+            hits.append(detection)
+    hits.sort(key=lambda detection: ((detection['box'][2] - detection['box'][0]) * (detection['box'][3] - detection['box'][1]), -(detection['score'] or 0), detection['id']))
+    return {'selected_id': hits[0]['id'] if hits else None, 'hit_ids': [item['id'] for item in hits]}
+
+
+@app.get('/api/detections/{run_id}/{detection_id}/highlight')
+def highlight_detection(run_id: str, detection_id: int):
+    folder, manifest, original, size, detections = inspection_capture(run_id)
+    detection = next((item for item in detections if item['id'] == detection_id), None)
+    if detection is None:
+        raise HTTPException(404, 'Detection not found in this picture')
+    mask = inspection_mask(folder, manifest['detections'][detection_id], size)
+    try:
+        with Image.open(original) as image:
+            original_image = image.convert('RGB')
+        dimmed = Image.blend(original_image, Image.new('RGB', size, (0, 0, 0)), .63)
+        tinted = Image.blend(original_image, Image.new('RGB', size, (199, 180, 139)), .30)
+        canvas = Image.composite(tinted, dimmed, mask)
+        canvas = draw_mask_contours(canvas, [(mask, (235, 216, 174))], width=2)
+        draw = ImageDraw.Draw(canvas)
+        label = f"{detection['category']} {detection['number']}"
+        box = mask.getbbox()
+        if box is not None:
+            draw.text((box[0] + 3, max(2, box[1] - 14)), label, fill=(255, 239, 206), stroke_width=2, stroke_fill=(0, 0, 0))
+        output = BytesIO()
+        canvas.save(output, format="PNG")
+        return Response(output.getvalue(), media_type="image/png", headers={"Cache-Control": "private, max-age=3600"})
+    except (OSError, ValueError) as error:
+        raise HTTPException(409, 'The selected mask could not be highlighted') from error

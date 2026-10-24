@@ -91,6 +91,17 @@ Unknown scheduler state is displayed as unavailable. The panel always describes
 today's live system, even when the gallery is displaying a historical date.
 
 
+### Inspecting individual detections
+
+The capture viewer supports selecting an individual saved mask by clicking the
+picture or using the keyboard-accessible object list. Pixel hits respect the
+category switches; overlapping masks prefer the smaller bounding box and remain
+selectable in the list. Inspection dims the background and displays the saved
+detection score and capture time. Numbers are local to one capture, not tracked
+identities. Inspecting stops Follow latest until the user resumes it. The
+inspection endpoints only read original images, manifests, and raw masks; they
+do not capture new images, run SAM3, or alter monitoring counts.
+
 ## Spoken room information
 
 The local assistant recognizes these read-only questions before generic AI or

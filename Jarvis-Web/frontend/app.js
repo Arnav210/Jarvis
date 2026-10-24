@@ -9,6 +9,7 @@ const TYPES = {
 let currentRuns = [], selectedFolder = null, viewMode = 'original', followLatest = true;
 let capturesConnected = false, monitorConnected = false, changesOnly = false;
 let monitorLoading = false;
+let inspectionKey='',inspectionData=null,inspectionLoading=false,inspectionError='',selectedObjectId=null,inspectionTicket=0,hitTicket=0,overlapIds=[],inspectorSignature='';
 let captureRequest = 0;
 let lastMonitorCheck = null, monitorStateAvailable = false, failedImage = null;
 let configuredMaskCategories = [], maskSourceAvailable = false;
@@ -59,14 +60,14 @@ function renderMaskControls(run) {
   const maskCount=selected.reduce((sum,category)=>sum+(run?.category_counts?.[category]||0),0);
   const partial=categories.some(category=>excludedMaskCategories.has(category));
   $('mask-summary').textContent=!run?'Choose a capture to inspect its masks.':!run.mask_filterable?(partial?'Individual masks are unavailable for this older capture. Showing the original when categories are hidden.':'Saved combined overlay only · individual category counts are unavailable for this capture.'):`${selected.length} of ${categories.length} categories selected · ${maskCount} masks${viewMode==='original'?' · original view':''}`;
-  if($('image-dialog').open){const url=imageForRun(run);if(url)$('expanded-image').src=url;}
+  if($('image-dialog').open){const url=displayImageUrl(run);if(url)$('expanded-image').src=url;}
 }
 async function fetchMaskCategories() {
   try{const response=await fetch('/api/mask-categories',{cache:'no-store',signal:AbortSignal.timeout(8000)});if(!response.ok)throw Error();const data=await response.json();configuredMaskCategories=Array.isArray(data.categories)?data.categories.filter(c=>typeof c==='string'):[];maskSourceAvailable=!!data.source_available;}
   catch{maskSourceAvailable=false;}
   renderDisplay();renderGallery();
 }
-function setView(mode) {viewMode=mode; failedImage=null; renderDisplay();renderGallery();}
+function setView(mode) {selectedObjectId=null;inspectionError='';overlapIds=[];viewMode=mode; failedImage=null; renderDisplay();renderGallery();}
 function selectCapture(folder) {
   selectedFolder=folder;followLatest=false;failedImage=null;
   renderDisplay();renderGallery();
@@ -79,14 +80,102 @@ function renderSelectedChanges(run) {
   if(!changes.length){container.textContent='No confirmed changes recorded for this capture.';return;}
   for(const event of changes){const type=typeInfo(event.event);container.append(el('span','change-line '+type.tone,`${type.icon} ${event.message || type.label}`));}
 }
+function visibleDetections() {
+  return inspectionData&&inspectionData.run_id===selectedRun()?.folder?inspectionData.detections.filter(item=>!excludedMaskCategories.has(item.category)):[];
+}
+function selectedObject() {return visibleDetections().find(item=>item.id===selectedObjectId);}
+function displayImageUrl(run) {
+  const item=run?.folder===selectedRun()?.folder?selectedObject():null;
+  return item?`/api/detections/${encodeURIComponent(run.folder)}/${item.id}/highlight?render=contours-v1`:imageForRun(run);
+}
+async function loadInspection(run) {
+  const key=run?run.folder+':'+String(run.mask_filterable):'none';
+  if(key===inspectionKey)return;
+  inspectionKey=key;inspectionData=null;inspectionError='';selectedObjectId=null;overlapIds=[];inspectorSignature='';hitTicket++;
+  const ticket=++inspectionTicket;
+  if(!run){inspectionLoading=false;return;}
+  inspectionLoading=true;
+  try{
+    const response=await fetch(`/api/detections/${encodeURIComponent(run.folder)}`,{cache:'no-store',signal:AbortSignal.timeout(8000)});
+    if(!response.ok)throw Error(response.status===409?'Individual masks are unavailable for this older picture.':'Saved detections could not be loaded.');
+    const data=await response.json();
+    if(ticket!==inspectionTicket)return;
+    if(!Array.isArray(data.detections)||data.run_id!==run.folder||!(data.width>0&&data.height>0))throw Error('Invalid detection data.');
+    inspectionData=data;
+  }catch(error){if(ticket===inspectionTicket){inspectionError=error.message;if(!error.message.includes('older picture'))inspectionKey='';}}
+  finally{if(ticket===inspectionTicket){inspectionLoading=false;renderInspector();}}
+}
+function chooseObject(id) {
+  const item=visibleDetections().find(item=>item.id===id&&item.mask_available);if(!item)return;
+  hitTicket++;selectedObjectId=id;inspectionError='';followLatest=false;failedImage=null;
+  if(!overlapIds.includes(id))overlapIds=[];
+  renderDisplay();
+  Array.from($('detection-list').children).find(button=>button.dataset.detectionId===String(id))?.focus({preventScroll:true});
+}
+function navigateObject(step) {
+  const items=visibleDetections().filter(item=>item.mask_available);
+  if(!items.length)return;
+  const index=items.findIndex(item=>item.id===selectedObjectId);
+  const next=items[index<0?(step>0?0:items.length-1):(index+step+items.length)%items.length];
+  const focusInList=$('detection-list').contains(document.activeElement);
+  chooseObject(next.id);
+  const button=Array.from($('detection-list').children).find(value=>value.dataset.detectionId===String(next.id));
+  if(focusInList)button?.focus({preventScroll:true});
+  button?.scrollIntoView({block:'nearest',inline:'nearest'});
+}
+window.addEventListener('keydown',event=>{
+  if(event.defaultPrevented||event.altKey||event.ctrlKey||event.metaKey||event.shiftKey)return;
+  if(event.key!=='ArrowLeft'&&event.key!=='ArrowRight')return;
+  const target=event.target;
+  if(target?.isContentEditable||target?.closest?.('input,textarea,select,[role="textbox"],[role="slider"],[role="spinbutton"],[role="combobox"]')||document.querySelector('dialog[open]'))return;
+  const inInspector=!!target?.closest?.('.object-inspector');
+  if(!inInspector&&!selectedObject())return;
+  if(!visibleDetections().some(item=>item.mask_available))return;
+  event.preventDefault();navigateObject(event.key==='ArrowRight'?1:-1);
+});
+function renderInspector() {
+  const items=visibleDetections(), item=selectedObject(),run=selectedRun();
+  const ready=!!inspectionData&&inspectionData.run_id===run?.folder;
+  $('featured-image').classList.toggle('inspectable',ready&&items.some(value=>value.mask_available));
+  $('object-click-hint').textContent=inspectionLoading?'Loading object inspection…':!run?'Choose a picture to inspect its objects.':!ready?'Object inspection unavailable for this picture.':!items.length?'No detections in the selected categories.':!items.some(value=>value.mask_available)?'The individual masks for these detections are unavailable.':'Click an object in the picture to inspect its mask.';
+  $('clear-object').hidden=!item;$('object-detail').hidden=!item;
+  if(item){
+    $('object-name').textContent=item.category.replaceAll('_',' ')+' '+item.number;
+    $('object-score').textContent=Number.isFinite(item.score)?`Detection score ${(item.score*100).toFixed(1)}%`:'Detection score unavailable';
+    $('object-capture-time').textContent=captureText(run);
+  }
+  let message=`${items.length} detections in the selected categories. Choose an object below or click the picture.`;
+  if(inspectionLoading)message='Loading saved detections…';
+  else if(inspectionError)message=inspectionError;
+  else if(!run)message='Choose a picture to inspect its objects.';
+  else if(!ready)message='Individual detections are unavailable.';
+  else if(overlapIds.length>1)message=`${overlapIds.length} masks overlap at this point. Choose another object below to inspect it.`;
+  else if(item)message='Selected mask highlighted; the rest of the picture is dimmed.';
+  $('object-inspect-message').textContent=message;
+  const signature=JSON.stringify([inspectionData,Array.from(excludedMaskCategories),selectedObjectId,overlapIds]);
+  if(signature===inspectorSignature)return;inspectorSignature=signature;
+  const focused=document.activeElement?.dataset?.detectionId,list=$('detection-list');list.replaceChildren();
+  for(const value of items){
+    const button=el('button','detection-choice'+(overlapIds.includes(value.id)?' at-click':''));button.type='button';button.dataset.detectionId=String(value.id);
+    button.setAttribute('aria-pressed',String(value.id===selectedObjectId));button.disabled=!value.mask_available;
+    button.setAttribute('aria-label',`Inspect ${value.category} ${value.number}${value.mask_available?'':' · mask unavailable'}`);
+    button.append(el('span','',value.category.replaceAll('_',' ')+' '+value.number),el('small','',Number.isFinite(value.score)?(value.score*100).toFixed(1)+'%':'—'));
+    button.onclick=()=>chooseObject(value.id);list.append(button);
+  }
+  if(focused)Array.from(list.children).find(button=>button.dataset.detectionId===focused)?.focus({preventScroll:true});
+}
+
 function renderDisplay() {
-  const run=selectedRun(), img=$('featured-image'), url=imageForRun(run);
+  const run=selectedRun();loadInspection(run);
+  if(selectedObjectId!==null&&!visibleDetections().some(item=>item.id===selectedObjectId))selectedObjectId=null;
+  overlapIds=overlapIds.filter(id=>visibleDetections().some(item=>item.id===id));
+  const img=$('featured-image'), url=displayImageUrl(run);
   const unavailable=!url || failedImage===url;
   img.hidden=unavailable;$('empty-state').hidden=!unavailable;$('frame-label').hidden=unavailable;
   if(url && img.getAttribute('src')!==url)img.src=url;
   $('empty-state').querySelector('h3').textContent=failedImage===url && url ? 'Image could not load' : run ? 'This view is unavailable' : 'Waiting for a capture';
   $('empty-state').querySelector('p').textContent=run ? 'Choose another view or capture.' : capturesConnected ? 'Saved frames will appear here.' : 'Waiting for the capture archive connection.';
-  $('frame-label').textContent=viewMode==='original'?'ORIGINAL FRAME':!maskCategories(run).some(c=>!excludedMaskCategories.has(c))?'NO MASKS SELECTED':url===run?.original?'ORIGINAL · MASKS UNAVAILABLE':'DETECTION OVERLAY';
+  $('frame-label').textContent=selectedObject()?`INSPECTING ${selectedObject().category.toUpperCase()} ${selectedObject().number}`:viewMode==='original'?'ORIGINAL FRAME':!maskCategories(run).some(c=>!excludedMaskCategories.has(c))?'NO MASKS SELECTED':url===run?.original?'ORIGINAL · MASKS UNAVAILABLE':'DETECTION OVERLAY';
   $('original-btn').setAttribute('aria-pressed',String(viewMode==='original'));
   $('overlay-btn').setAttribute('aria-pressed',String(viewMode==='overlay'));
   $('image-timestamp').textContent=run?captureText(run)+(run.captured_at?'':' · camera local time'):'No frame selected';
@@ -98,6 +187,7 @@ function renderDisplay() {
   $('latest-btn').setAttribute('aria-pressed',String(followLatest));
   renderSelectedChanges(run);
   renderMaskControls(run);
+  renderInspector();
 }
 function renderGallery() {
   const grid=$('image-grid'), focusedFolder=document.activeElement?.dataset?.folder;
@@ -318,9 +408,36 @@ $('latest-btn').onclick=()=>{followLatest=true;selectedFolder=visibleRuns()[0]?.
 function navigate(step){const list=visibleRuns(),i=list.findIndex(r=>r.folder===selectedFolder),next=list[i+step];if(next)selectCapture(next.folder);}
 $('prev-btn').onclick=()=>navigate(-1);$('next-btn').onclick=()=>navigate(1);
 $('featured-image').onerror=()=>{failedImage=imageForRun(selectedRun());renderDisplay();};
-$('expand-btn').onclick=()=>{const run=selectedRun(),url=imageForRun(run);if(!url)return;$('expanded-image').src=url;$('dialog-caption').textContent=captureText(run);$('dialog-title').textContent=viewMode==='original'?'Original capture':'Detection overlay';$('image-dialog').showModal();};
+$('expand-btn').onclick=()=>{const run=selectedRun(),url=displayImageUrl(run);if(!url)return;$('expanded-image').src=url;$('dialog-caption').textContent=captureText(run);$('dialog-title').textContent=selectedObject()?'Selected object':viewMode==='original'?'Original capture':'Detection overlay';$('image-dialog').showModal();};
 $('masks-all').onclick=()=>{for(const category of maskCategories())excludedMaskCategories.delete(category);saveMaskSelection();};
 $('masks-none').onclick=()=>{for(const category of maskCategories())excludedMaskCategories.add(category);saveMaskSelection();};
 $('close-dialog').onclick=()=>$('image-dialog').close();
 $('image-dialog').onclick=event=>{if(event.target===$('image-dialog')){const r=event.target.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)event.target.close();}};
+$('clear-object').onclick=()=>{selectedObjectId=null;inspectionError='';overlapIds=[];hitTicket++;failedImage=null;renderDisplay();};
+$('featured-image').onclick=async event=>{
+  const run=selectedRun(),data=inspectionData;
+  if(!run||data?.run_id!==run.folder||!visibleDetections().length)return;
+  const box=event.currentTarget.getBoundingClientRect(),scale=Math.min(box.width/data.width,box.height/data.height);
+  const x=Math.floor((event.clientX-box.left-(box.width-data.width*scale)/2)/scale);
+  const y=Math.floor((event.clientY-box.top-(box.height-data.height*scale)/2)/scale);
+  if(x<0||y<0||x>=data.width||y>=data.height)return;
+  const query=new URLSearchParams({x:String(x),y:String(y)});
+  const categories=[...new Set(visibleDetections().map(item=>item.category))];
+  for(const category of categories)query.append('categories',category);
+  const ticket=++hitTicket;inspectionError='Finding the mask at this point…';renderInspector();
+  try{
+    const response=await fetch(`/api/detections/${encodeURIComponent(run.folder)}/hit?${query}`,{cache:'no-store',signal:AbortSignal.timeout(8000)});
+    if(!response.ok)throw Error('This saved mask could not be inspected.');
+    const hit=await response.json();
+    if(ticket!==hitTicket||run.folder!==selectedRun()?.folder)return;
+    overlapIds=Array.isArray(hit.hit_ids)?hit.hit_ids:[];
+    if(hit.selected_id!==null&&visibleDetections().some(item=>item.id===hit.selected_id))chooseObject(hit.selected_id);
+    else{selectedObjectId=null;inspectionError='No selected-category mask at this point. Try another object or choose from the list.';renderDisplay();}
+  }catch(error){if(ticket===hitTicket){inspectionError=error.message;renderInspector();}}
+};
+$('featured-image').onerror=()=>{
+  if(selectedObjectId!==null){selectedObjectId=null;inspectionError='The selected mask could not be highlighted. Showing the capture view.';renderDisplay();}
+  else{failedImage=$('featured-image').getAttribute('src');renderDisplay();}
+};
+
 renderDisplay();renderGallery();renderOccupancy();poll();setInterval(updateFreshness,30000);

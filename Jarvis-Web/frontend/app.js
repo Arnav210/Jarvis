@@ -220,6 +220,7 @@ function renderGallery() {
 }
 let selectedDay=null, roomToday=null, occupancyData=null, occupancySignature='', occupancyRequest=0;
 let selectedObservationTime=null, followToday=true;
+let graphTimeRange='school';
 const SVG_NS='http://www.w3.org/2000/svg';
 function svgNode(tag, attributes, text) {
   const node=document.createElementNS(SVG_NS,tag);
@@ -232,6 +233,7 @@ function roomTime(stamp, options={hour:'numeric',minute:'2-digit'}) {
 }
 function showObservation(point) {
   selectedObservationTime=point.time;
+  for(const dot of $('occupancy-chart').querySelectorAll('.occupancy-observation'))dot.classList.toggle('selected',dot.dataset.observationTime===point.time);
   $('occupancy-readout').textContent=`${point.count} ${point.count===1?'person':'people'} observed at ${roomTime(point.time,{hour:'numeric',minute:'2-digit',second:'2-digit'})} · ${point.source==='capture'?'saved capture':'saved monitor event'}`;
 }
 function renderObservationTable() {
@@ -245,34 +247,69 @@ function renderObservationTable() {
     row.append(source);body.append(row);
   }
 }
+function occupancySegments(points) {
+  const segments=[];
+  for(const point of points){
+    const segment=segments.at(-1),previous=segment?.at(-1);
+    const gap=previous?new Date(point.time)-new Date(previous.time):Infinity;
+    if(previous&&gap>=0&&gap<=900000&&point.hour>=previous.hour)segment.push(point);
+    else segments.push([point]);
+  }
+  return segments;
+}
+function occupancyAreaPath(segment,x,y,bottom) {
+  if(segment.length<2)return null;
+  return `M ${x(segment[0])} ${bottom} L ${x(segment[0])} ${y(segment[0].count)}`+
+    segment.slice(1).map(point=>` H ${x(point)} V ${y(point.count)}`).join('')+
+    ` L ${x(segment.at(-1))} ${bottom} Z`;
+}
 function renderOccupancy() {
   const svg=$('occupancy-chart'), points=occupancyData?.observations||[];
-  svg.replaceChildren(svgNode('title',{id:'occupancy-svg-title'},'Observed people across the selected day'),svgNode('desc',{id:'occupancy-svg-description'},'Horizontal axis: midnight to midnight. Vertical axis: number of people. Blank periods have no saved observations. Focus a dot to read its count and time.'));
-  const left=62,right=972,top=28,bottom=244,step=Math.max(1,Math.ceil(Math.max(5,...points.map(p=>p.count))/4)),ceiling=step*4;
-  const x=point=>left+(point.hour/24)*(right-left), y=count=>bottom-(count/ceiling)*(bottom-top);
+  const school=graphTimeRange==='school',startHour=school?8:0,endHour=school?16:24;
+  const visiblePoints=points.filter(point=>point.hour>=startHour&&point.hour<=endHour);
+  const rangeLabel=school?'08:00–16:00':'00:00–24:00';
+  svg.replaceChildren(svgNode('title',{id:'occupancy-svg-title'},'Observed people across the selected day'),svgNode('desc',{id:'occupancy-svg-description'},`Horizontal axis: ${school?'8 AM to 4 PM':'midnight to midnight'} in the room timezone. Vertical axis: number of people. Fill and lines only connect observations no more than 15 minutes apart. Blank periods have no saved observations. Focus a dot to read its count and time.`));
+  const left=62,right=972,top=28,bottom=244,step=Math.max(1,Math.ceil(Math.max(5,...visiblePoints.map(p=>p.count))/4)),ceiling=step*4;
+  const x=point=>left+((point.hour-startHour)/(endHour-startHour))*(right-left), y=count=>bottom-(count/ceiling)*(bottom-top);
   for(let i=0;i<=4;i++){
     const count=i*step,py=y(count);
     svg.append(svgNode('line',{x1:left,x2:right,y1:py,y2:py,class:'chart-grid'}),svgNode('text',{x:left-14,y:py+4,'text-anchor':'end',class:'chart-axis'},count));
   }
-  for(let hour=0;hour<=24;hour+=4){
-    const px=left+(hour/24)*(right-left);
-    svg.append(svgNode('line',{x1:px,x2:px,y1:top,y2:bottom,class:'chart-grid vertical'}),svgNode('text',{x:px,y:bottom+28,'text-anchor':hour===0?'start':hour===24?'end':'middle',class:'chart-axis'},`${String(hour).padStart(2,'0')}:00`));
+  for(let hour=startHour;hour<=endHour;hour+=school?1:4){
+    const px=left+((hour-startHour)/(endHour-startHour))*(right-left);
+    svg.append(svgNode('line',{x1:px,x2:px,y1:top,y2:bottom,class:'chart-grid vertical'}),svgNode('text',{x:px,y:bottom+28,'text-anchor':hour===startHour?'start':hour===endHour?'end':'middle',class:'chart-axis'},`${String(hour).padStart(2,'0')}:00`));
   }
   svg.append(svgNode('text',{x:left,y:16,class:'chart-axis'},'PEOPLE'));
-  for(let i=1;i<points.length;i++){
-    const previous=points[i-1],point=points[i],gap=new Date(point.time)-new Date(previous.time);
-    if(gap>=0&&gap<=900000&&point.hour>=previous.hour)svg.append(svgNode('path',{d:`M ${x(previous)} ${y(previous.count)} H ${x(point)} V ${y(point.count)}`,class:'occupancy-line'}));
+  const defs=svgNode('defs'),gradient=svgNode('linearGradient',{id:'occupancy-area-gradient',x1:0,y1:top,x2:0,y2:bottom,gradientUnits:'userSpaceOnUse'});
+  gradient.append(svgNode('stop',{offset:'0%',class:'area-gradient-top'}),svgNode('stop',{offset:'100%',class:'area-gradient-bottom'}));
+  defs.append(gradient);svg.append(defs);
+  const segments=occupancySegments(visiblePoints);
+  for(const segment of segments){
+    const d=occupancyAreaPath(segment,x,y,bottom);
+    if(d)svg.append(svgNode('path',{d,class:'occupancy-area',fill:'url(#occupancy-area-gradient)'}));
   }
-  for(const point of points){
-    const dot=svgNode('circle',{cx:x(point),cy:y(point.count),r:5.5,class:'occupancy-point',tabindex:0,role:'img','aria-label':`${point.count} people at ${roomTime(point.time,{hour:'numeric',minute:'2-digit',second:'2-digit'})}`});
-    dot.append(svgNode('title',{},`${point.count} people · ${roomTime(point.time)}`));
-    dot.onfocus=dot.onmouseenter=dot.onclick=()=>showObservation(point);svg.append(dot);
+  for(const segment of segments){
+    if(segment.length<2)continue;
+    const d=`M ${x(segment[0])} ${y(segment[0].count)}`+segment.slice(1).map(point=>` H ${x(point)} V ${y(point.count)}`).join('');
+    svg.append(svgNode('path',{d,class:'occupancy-line'}));
   }
-  if(!points.length)svg.append(svgNode('text',{x:(left+right)/2,y:(top+bottom)/2,'text-anchor':'middle',class:'chart-empty'},occupancyData?'No saved people-count observations for this day':'Loading saved observations…'));
+  for(const point of visiblePoints){
+    const target=svgNode('g',{class:'occupancy-observation',tabindex:0,role:'button','data-observation-time':point.time,'aria-label':`${point.count} people at ${roomTime(point.time,{hour:'numeric',minute:'2-digit',second:'2-digit'})}`});
+    target.append(svgNode('circle',{cx:x(point),cy:y(point.count),r:11,class:'occupancy-hit-target'}),svgNode('circle',{cx:x(point),cy:y(point.count),r:3,class:'occupancy-point'}));
+    target.append(svgNode('title',{},`${point.count} people · ${roomTime(point.time)}`));
+    target.onfocus=target.onmouseenter=target.onclick=()=>showObservation(point);
+    target.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();showObservation(point);}};
+    svg.append(target);
+  }
+  if(!visiblePoints.length)svg.append(svgNode('text',{x:(left+right)/2,y:(top+bottom)/2,'text-anchor':'middle',class:'chart-empty'},occupancyData?(points.length?'No saved observations within school hours':'No saved people-count observations for this day'):'Loading saved observations…'));
   $('occupancy-peak').textContent=occupancyData?.peak??'—';
   $('occupancy-total').textContent=occupancyData?`${points.length} saved ${points.length===1?'observation':'observations'} on selected day`:'No daily observations loaded';
   $('occupancy-zone').textContent=occupancyData?occupancyData.timezone.replaceAll('_',' '):'Camera local time';
-  $('occupancy-day-label').textContent=selectedDay?new Date(selectedDay+'T12:00:00Z').toLocaleDateString(undefined,{timeZone:'UTC',weekday:'long',month:'long',day:'numeric',year:'numeric'})+' · 00:00–24:00':'Loading the daily graph…';
+  $('occupancy-day-label').textContent=selectedDay?new Date(selectedDay+'T12:00:00Z').toLocaleDateString(undefined,{timeZone:'UTC',weekday:'long',month:'long',day:'numeric',year:'numeric'})+` · ${rangeLabel}`:'Loading the daily graph…';
+  $('graph-school-hours').setAttribute('aria-pressed',String(school));
+  $('graph-full-day').setAttribute('aria-pressed',String(!school));
+  $('graph-range-note').textContent=school?'School hours · 8 AM–4 PM':'Full day · midnight–midnight';
+  $('graph-mobile-hint').textContent=school?'Swipe across the graph to see all school hours.':'Swipe across the graph to see all 24 hours.';
   $('next-day').disabled=!selectedDay||!roomToday||selectedDay>=roomToday;
   $('previous-day').disabled=!selectedDay;
   if(roomToday)$('occupancy-date').max=roomToday;
@@ -282,8 +319,8 @@ function renderOccupancy() {
   $('captures-previous-day').disabled=!selectedDay;
   $('captures-next-day').disabled=!selectedDay||!roomToday||selectedDay>=roomToday;
   $('capture-day-label').textContent=selectedDay?new Date(selectedDay+'T12:00:00Z').toLocaleDateString(undefined,{timeZone:'UTC',month:'long',day:'numeric',year:'numeric'})+' · Pacific time':'Choose a day';
-  const selected=points.find(point=>point.time===selectedObservationTime)||points.at(-1);
-  if(selected)showObservation(selected);else $('occupancy-readout').textContent='No count was recorded for this day. Blank hours do not mean zero people.';
+  const selected=visiblePoints.find(point=>point.time===selectedObservationTime)||visiblePoints.at(-1);
+  if(selected)showObservation(selected);else $('occupancy-readout').textContent=points.length?'No observations in this view. Choose Full day to see the rest of the day.':'No count was recorded for this day. Blank hours do not mean zero people.';
   const latest=occupancyData?.latest_observation;
   $('people-observed-at').textContent=latest?'Observed '+roomTime(latest.time,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})+(Date.now()-new Date(latest.time)>900000?' · not current':''):'No timestamped people observation';
   $('people-observed-at').classList.toggle('stale',!!latest&&Date.now()-new Date(latest.time)>900000);
@@ -322,6 +359,9 @@ $('captures-previous-day').onclick=()=>offsetObservationDay(-1);$('captures-next
 $('captures-today').onclick=()=>{if(roomToday)changeObservationDay(roomToday);};
 $('previous-day').onclick=()=>offsetObservationDay(-1);$('next-day').onclick=()=>offsetObservationDay(1);
 $('today-btn').onclick=()=>{if(roomToday)changeObservationDay(roomToday);};
+for(const [id,range] of [['graph-school-hours','school'],['graph-full-day','day']]){
+  $(id).onclick=()=>{if(graphTimeRange!==range){graphTimeRange=range;renderOccupancy();}};
+}
 $('observations-toggle').onclick=()=>{const show=$('observations-table').hidden;$('observations-table').hidden=!show;$('observations-toggle').setAttribute('aria-expanded',String(show));$('observations-toggle').textContent=show?'Hide observations':'Show observations';};
 
 function updateFreshness() {

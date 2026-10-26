@@ -331,6 +331,24 @@ dialog {border-radius:4px;box-shadow:0 0 50px #6ee6ff14}dialog img {border-radiu
 @media(prefers-reduced-motion:reduce) {html {scroll-behavior:auto}}
 @media(prefers-reduced-motion:no-preference) {button,a {transition:background .15s,border-color .15s,color .15s}}
 
+/* Occupancy range and observation areas. Fill never spans missing samples. */
+.chart-range-toolbar {display:flex;align-items:center;justify-content:space-between;gap:14px;padding:0 26px 18px;flex-wrap:wrap}
+.graph-range-switch {display:inline-flex;gap:3px;padding:3px;background:#05101a;border:1px solid var(--line);border-radius:3px}
+.graph-range-switch button {min-height:36px;padding:8px 12px;border:1px solid transparent;border-radius:1px;background:transparent;color:var(--muted);font:11px var(--mono)}
+.graph-range-switch button[aria-pressed=true] {color:var(--accent);background:#123b50;box-shadow:inset 0 -2px var(--accent)}
+#graph-range-note {font:10px/1.6 var(--mono);color:var(--muted)}
+.area-gradient-top {stop-color:var(--accent);stop-opacity:.25}
+.area-gradient-bottom {stop-color:var(--accent);stop-opacity:.025}
+.occupancy-area {pointer-events:none;stroke:none}
+.occupancy-line {pointer-events:none;filter:none}
+.occupancy-point {stroke-width:1.3;filter:none;pointer-events:none}
+.occupancy-hit-target {fill:transparent;stroke:none;pointer-events:all}
+.occupancy-observation {cursor:pointer}
+.occupancy-observation:focus {outline:none}
+.occupancy-observation:hover .occupancy-point,.occupancy-observation:focus .occupancy-point,.occupancy-observation.selected .occupancy-point {r:4.5;fill:var(--text);stroke:var(--accent);stroke-width:2;filter:drop-shadow(0 0 3px #6ee6ff70)}
+.occupancy-observation:focus .occupancy-hit-target {stroke:var(--accent);stroke-width:1;stroke-dasharray:2 3}
+@media(max-width:480px){.chart-range-toolbar {padding:0 20px 16px;gap:10px}.graph-range-switch button {min-height:40px}#graph-range-note {font-size:9px}}
+
 /* Minimal borders: spacing and quiet surfaces carry the hierarchy. */
 :root {--line:#6ee6ff1c}
 .topbar {border-bottom:1px solid var(--line);box-shadow:none}

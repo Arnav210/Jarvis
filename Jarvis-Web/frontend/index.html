@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#060d15"><title>Jarvis3000 · Room Analysis</title>
-  <link rel="stylesheet" href="/static/style.css?v=20261025-control-room">
+  <link rel="stylesheet" href="/static/style.css?v=20261025-school-graph">
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to room occupancy</a>
@@ -35,13 +35,14 @@
     </section>
     <section id="occupancy" class="panel occupancy-panel" aria-labelledby="occupancy-title">
       <div class="panel-heading"><div><p class="eyebrow">01 / OCCUPANCY ANALYSIS</p><h2 id="occupancy-title">People in the room</h2></div><div class="day-controls"><button id="previous-day" class="button" aria-label="Previous day">←</button><label><span class="sr-only">Observation date</span><input id="occupancy-date" type="date" aria-label="Observation date"></label><button id="next-day" class="button" aria-label="Next day">→</button><button id="today-btn" class="button">Today</button></div></div>
+      <div class="chart-range-toolbar"><div class="graph-range-switch" role="group" aria-label="Graph time range"><button id="graph-school-hours" type="button" aria-pressed="true">School hours</button><button id="graph-full-day" type="button" aria-pressed="false">Full day</button></div><span id="graph-range-note">School hours · 8 AM–4 PM</span></div>
       <div class="chart-heading"><p id="occupancy-day-label">Loading the daily graph…</p><span id="occupancy-zone">Camera local time</span></div>
       <div id="occupancy-warning" class="chart-warning" role="status" hidden></div>
-      <div class="chart-scroll"><svg id="occupancy-chart" viewBox="0 0 1000 300" role="img" aria-labelledby="occupancy-svg-title occupancy-svg-description"><title id="occupancy-svg-title">Observed people across the selected day</title><desc id="occupancy-svg-description">Horizontal axis: midnight to midnight. Vertical axis: number of people. Blank periods have no saved observations.</desc></svg></div>
-      <p class="chart-mobile-hint">Swipe across the graph to see all 24 hours.</p>
+      <div class="chart-scroll"><svg id="occupancy-chart" viewBox="0 0 1000 300" role="img" aria-labelledby="occupancy-svg-title occupancy-svg-description"><title id="occupancy-svg-title">Observed people across the selected day</title><desc id="occupancy-svg-description">Horizontal axis: 8 AM to 4 PM in the room timezone. Vertical axis: number of people. Blank periods have no saved observations.</desc></svg></div>
+      <p class="chart-mobile-hint" id="graph-mobile-hint">Swipe across the graph to see all school hours.</p>
       <div class="chart-readout" id="occupancy-readout" role="status">Waiting for saved people-count observations.</div>
       <div class="chart-footer"><p><span class="chart-dot" aria-hidden="true"></span> Saved observation <span class="chart-line" aria-hidden="true"></span> Short observation interval</p><button id="observations-toggle" class="text-button" aria-expanded="false" aria-controls="observations-table">Show observations</button></div>
-      <p class="chart-note">Blank periods mean no observations, not an empty room. Lines connect samples no more than 15 minutes apart. Counts are detector estimates, not a verified headcount.</p>
+      <p class="chart-note">Blank periods mean no observations, not an empty room. Fill and lines connect samples no more than 15 minutes apart. Daily totals include the full day. Counts are detector estimates, not a verified headcount.</p>
       <div id="observations-table" class="observations-table" hidden><table><thead><tr><th scope="col">Time</th><th scope="col">People</th><th scope="col">Source</th></tr></thead><tbody id="observations-body"></tbody></table></div>
     </section>
     <section id="captures" aria-labelledby="captures-title">
@@ -68,6 +69,6 @@
     <footer class="page-footer"><span><span class="tiny-square"></span> JARVIS VISION</span><span id="freshness" role="status">Checking capture freshness…</span><a href="#main">Back to top ↑</a></footer>
   </main>
   <dialog id="image-dialog" aria-labelledby="dialog-title"><div class="dialog-bar"><h2 id="dialog-title">Capture detail</h2><button id="close-dialog" class="button">Close <span aria-hidden="true">×</span></button></div><img draggable="false" id="expanded-image" alt="Expanded selected capture"><p id="dialog-caption"></p></dialog>
-  <script src="/static/app.js?v=20261023-contour-outlines"></script>
+  <script src="/static/app.js?v=20261025-school-graph"></script>
 </body>
 </html>

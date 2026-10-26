@@ -181,8 +181,8 @@ function renderDisplay() {
   const unavailable=!url || failedImage===url;
   img.hidden=unavailable;$('empty-state').hidden=!unavailable;$('frame-label').hidden=unavailable;
   if(url && img.getAttribute('src')!==url)img.src=url;
-  $('empty-state').querySelector('h3').textContent=failedImage===url && url ? 'Image could not load' : run ? 'This view is unavailable' : 'Waiting for a capture';
-  $('empty-state').querySelector('p').textContent=run ? 'Choose another view or capture.' : capturesConnected ? 'Saved frames will appear here.' : 'Waiting for the capture archive connection.';
+  $('empty-state').querySelector('h3').textContent=failedImage===url && url ? 'Image could not load' : run ? 'This view is unavailable' : capturesConnected ? 'No captures on this day' : 'Connecting to the archive';
+  $('empty-state').querySelector('p').textContent=run ? 'Choose another view or capture.' : capturesConnected ? 'Choose another date in Daily captures to browse saved frames.' : 'Waiting for the capture archive connection.';
   $('frame-label').textContent=selectedObject()?`INSPECTING ${selectedObject().category.toUpperCase()} ${selectedObject().number}`:viewMode==='original'?'ORIGINAL FRAME':!maskCategories(run).some(c=>!excludedMaskCategories.has(c))?'NO MASKS SELECTED':url===run?.original?'ORIGINAL · MASKS UNAVAILABLE':'DETECTION OVERLAY';
   $('original-btn').setAttribute('aria-pressed',String(viewMode==='original'));
   $('overlay-btn').setAttribute('aria-pressed',String(viewMode==='overlay'));

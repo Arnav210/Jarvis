@@ -2,18 +2,18 @@
 <html lang="en">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="theme-color" content="#171918"><title>Jarvis3000 · Room Analysis</title>
-  <link rel="stylesheet" href="/static/style.css?v=20261023-image-menu">
+  <meta name="theme-color" content="#060d15"><title>Jarvis3000 · Room Analysis</title>
+  <link rel="stylesheet" href="/static/style.css?v=20261025-control-room">
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to room occupancy</a>
   <header class="topbar">
-    <a class="brand" href="/" aria-label="Jarvis home"><span class="brand-mark" aria-hidden="true">J<span>3K</span></span><span>JARVIS3000<small>OBSERVATION SYSTEM</small></span></a>
-    <nav aria-label="Dashboard sections"><a href="#occupancy" class="nav-active">01 &nbsp; Occupancy</a><a href="#capture-status">02 &nbsp; Capture status</a><a href="#captures">03 &nbsp; Archive</a></nav>
+    <a class="brand" href="/" aria-label="Jarvis home"><span class="brand-mark" aria-hidden="true">J<span>3K</span></span><span>JARVIS3000<small>CONTROL INTERFACE</small></span></a>
+    <nav aria-label="Dashboard sections"><a href="#occupancy" class="nav-active">Overview</a><a href="#capture-status">Capture health</a><a href="#captures">Archive</a></nav>
     <span class="connection"><span id="status-dot" class="dot"></span><span id="status-badge" role="status">Connecting</span></span>
   </header>
   <main id="main">
-    <section class="page-heading"><div><p class="eyebrow">ROOM MONITOR / LOCAL ARCHIVE</p><h1>Jarvis3000: <span>Room Analysis</span></h1><p class="intro">Occupancy, capture health, and the day’s visual record.</p></div><div class="heading-note"><span class="tiny-square"></span> SYSTEM CONNECTION<p id="monitor-sync">Waiting for monitoring data</p><button id="refresh-btn" class="button quiet">Refresh <span aria-hidden="true">↻</span></button></div></section>
+    <section class="page-heading"><div><p class="eyebrow">JARVIS3000 / VISUAL INTELLIGENCE</p><h1>Room <span>Analysis</span></h1><p class="intro">Room observations, capture telemetry, and visual analysis.</p></div><div class="reactor-shell" aria-hidden="true"><span class="reactor-core"></span></div><div class="heading-note"><span class="tiny-square"></span> ARCHIVE CONNECTION<p id="monitor-sync">Waiting for monitoring data</p><button id="refresh-btn" class="button quiet">Refresh <span aria-hidden="true">↻</span></button></div></section>
     <div id="demo-notice" class="notice" hidden>Preview with synthetic observations. No camera or microphone is active.</div>
     <div id="monitor-notice" class="notice" role="status" hidden></div>
     <section class="summary" aria-label="Latest recorded inventory">
@@ -23,7 +23,7 @@
       <div class="stat missing"><span><i class="stat-icon">−</i>Missing objects</span><strong id="objects-missing">N/A</strong><small>Feature not available yet</small></div>
     </section>
     <section id="capture-status" class="panel capture-status-panel" aria-labelledby="capture-status-title">
-      <div class="capture-status-heading"><div><p class="eyebrow">02 / CAPTURE HEALTH</p><h2 id="capture-status-title">Capture schedule</h2></div><span id="capture-status-state" class="capture-status-pill" role="status">Checking…</span></div>
+      <div class="capture-status-heading"><div><p class="eyebrow">02 / CAPTURE TELEMETRY</p><h2 id="capture-status-title">Capture schedule</h2></div><span id="capture-status-state" class="capture-status-pill" role="status">Checking…</span></div>
       <p id="capture-status-message" class="capture-status-message">Checking the camera schedule and saved analysis.</p>
       <div class="capture-status-grid">
         <div><span>Last picture</span><strong id="capture-status-last">—</strong></div>
@@ -34,7 +34,7 @@
       <div class="capture-status-footer"><p id="capture-status-window">Schedule unavailable</p><p id="capture-status-checked">Waiting for status</p></div>
     </section>
     <section id="occupancy" class="panel occupancy-panel" aria-labelledby="occupancy-title">
-      <div class="panel-heading"><div><p class="eyebrow">01 / OCCUPANCY</p><h2 id="occupancy-title">People in the room</h2></div><div class="day-controls"><button id="previous-day" class="button" aria-label="Previous day">←</button><label><span class="sr-only">Observation date</span><input id="occupancy-date" type="date" aria-label="Observation date"></label><button id="next-day" class="button" aria-label="Next day">→</button><button id="today-btn" class="button">Today</button></div></div>
+      <div class="panel-heading"><div><p class="eyebrow">01 / OCCUPANCY ANALYSIS</p><h2 id="occupancy-title">People in the room</h2></div><div class="day-controls"><button id="previous-day" class="button" aria-label="Previous day">←</button><label><span class="sr-only">Observation date</span><input id="occupancy-date" type="date" aria-label="Observation date"></label><button id="next-day" class="button" aria-label="Next day">→</button><button id="today-btn" class="button">Today</button></div></div>
       <div class="chart-heading"><p id="occupancy-day-label">Loading the daily graph…</p><span id="occupancy-zone">Camera local time</span></div>
       <div id="occupancy-warning" class="chart-warning" role="status" hidden></div>
       <div class="chart-scroll"><svg id="occupancy-chart" viewBox="0 0 1000 300" role="img" aria-labelledby="occupancy-svg-title occupancy-svg-description"><title id="occupancy-svg-title">Observed people across the selected day</title><desc id="occupancy-svg-description">Horizontal axis: midnight to midnight. Vertical axis: number of people. Blank periods have no saved observations.</desc></svg></div>
@@ -45,7 +45,7 @@
       <div id="observations-table" class="observations-table" hidden><table><thead><tr><th scope="col">Time</th><th scope="col">People</th><th scope="col">Source</th></tr></thead><tbody id="observations-body"></tbody></table></div>
     </section>
     <section id="captures" aria-labelledby="captures-title">
-      <div class="section-heading"><div><p class="eyebrow">03 / VISUAL RECORD</p><h2 id="captures-title">Capture archive</h2><p class="intro small">Every saved frame, organized by date. Select a picture to inspect its detections.</p></div><span class="count-badge"><strong id="capture-count">—</strong> captures on selected day</span></div>
+      <div class="section-heading"><div><p class="eyebrow">03 / VISUAL ARCHIVE</p><h2 id="captures-title">Capture archive</h2><p class="intro small">Every saved frame, organized by date. Select a picture to inspect its detections.</p></div><span class="count-badge"><strong id="capture-count">—</strong> captures on selected day</span></div>
       <div class="workspace">
         <div class="panel viewer-panel">
           <div class="viewer-toolbar"><div class="view-switch" role="group" aria-label="Image view"><button id="original-btn" aria-pressed="true">Photo</button><button id="overlay-btn" aria-pressed="false">Detection overlay</button></div><button id="expand-btn" class="button quiet" disabled aria-label="Expand selected capture">Expand <span aria-hidden="true">⤢</span></button></div>
@@ -62,7 +62,7 @@
           <fieldset class="mask-controls"><legend>Visible mask categories</legend><div class="mask-control-heading"><p id="mask-source">Loading SAM3 categories…</p><div><button id="masks-all" class="text-button" type="button">Select all</button><span aria-hidden="true"> / </span><button id="masks-none" class="text-button" type="button">Deselect all</button></div></div><div id="mask-category-list" class="mask-category-list"></div><p id="mask-summary" role="status"></p><p class="mask-note">Display only. SAM3 detection and monitoring continue unchanged.</p></fieldset>
           <div class="selected-changes"><h3>Changes in this capture</h3><div id="selected-changes">Select a capture to inspect its changes.</div></div>
         </div>
-        <aside class="panel gallery-panel" aria-label="Daily capture selection"><div class="gallery-heading"><h3>Day index</h3><button id="latest-btn" class="text-button" aria-pressed="true">Following latest ↗</button></div><div class="day-controls gallery-day-controls"><button id="captures-previous-day" class="button" aria-label="Previous capture day">←</button><label><span class="sr-only">Capture date</span><input id="captures-date" type="date" aria-label="Capture date"></label><button id="captures-next-day" class="button" aria-label="Next capture day">→</button><button id="captures-today" class="button">Today</button></div><p id="capture-day-label" class="panel-note"></p><label class="check-filter"><input id="changes-filter" type="checkbox">Captures with changes only</label><p id="capture-filter-count" class="panel-note"></p><div id="image-grid" class="capture-list"></div><p id="gallery-empty" class="gallery-empty">Loading captures…</p></aside>
+        <aside class="panel gallery-panel" aria-label="Daily capture selection"><div class="gallery-heading"><h3>Daily captures</h3><button id="latest-btn" class="text-button" aria-pressed="true">Following latest ↗</button></div><div class="day-controls gallery-day-controls"><button id="captures-previous-day" class="button" aria-label="Previous capture day">←</button><label><span class="sr-only">Capture date</span><input id="captures-date" type="date" aria-label="Capture date"></label><button id="captures-next-day" class="button" aria-label="Next capture day">→</button><button id="captures-today" class="button">Today</button></div><p id="capture-day-label" class="panel-note"></p><label class="check-filter"><input id="changes-filter" type="checkbox">Captures with changes only</label><p id="capture-filter-count" class="panel-note"></p><div id="image-grid" class="capture-list"></div><p id="gallery-empty" class="gallery-empty">Loading captures…</p></aside>
       </div>
     </section>
     <footer class="page-footer"><span><span class="tiny-square"></span> JARVIS VISION</span><span id="freshness" role="status">Checking capture freshness…</span><a href="#main">Back to top ↑</a></footer>
